@@ -1415,6 +1415,19 @@ class ChatScreen(Screen):
 
         self.message_input.text = ""
 
+        self.finished = False
+
+        self.reply_received = False
+
+        if self.poll_event is None:
+
+            self.poll_event = (
+                Clock.schedule_interval(
+                    self.poll_conversation,
+                    10
+                )
+            )
+
         self.send_button.disabled = True
 
         self.set_status(
@@ -1478,6 +1491,10 @@ class ChatScreen(Screen):
         self.set_status(
             "WORKING..."
         )
+
+        # Poll immediately so the user
+        # doesn't wait for the interval.
+        self.poll_conversation(0)
 
     # ========================================================
     # POLL EVENTS
