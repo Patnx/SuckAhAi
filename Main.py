@@ -18,6 +18,7 @@ from kivy.uix.dropdown import DropDown
 from kivy.uix.popup import Popup
 from kivy.uix.togglebutton import ToggleButton
 from kivy.uix.slider import Slider
+from kivy.uix.colorpicker import ColorPicker
 
 from kivy.uix.screenmanager import (
     ScreenManager,
@@ -1414,81 +1415,17 @@ class ChatScreen(Screen):
 
         current = get_color(key)
 
-        preview = Label(
-            text="",
-            size_hint_y=None,
-            height=dp(40)
+        picker = ColorPicker(
+            color=current
         )
 
         content = BoxLayout(
             orientation="vertical",
-            spacing=dp(6),
-            padding=dp(12)
+            padding=dp(6),
+            spacing=dp(6)
         )
 
-        content.add_widget(
-            Label(
-                text=f"Pick {key}:",
-                size_hint_y=None,
-                height=dp(28)
-            )
-        )
-
-        content.add_widget(preview)
-
-        hex_label = Label(
-            text="",
-            size_hint_y=None,
-            height=dp(24)
-        )
-
-        content.add_widget(hex_label)
-
-        sliders = []
-
-        for channel in ("R", "G", "B"):
-
-            slider = Slider(
-                min=0,
-                max=1,
-                value=current[
-                    "RGB".index(
-                        channel
-                    )
-                ],
-                step=0.01
-            )
-
-            slider.bind(
-                value=lambda s, v, c=channel:
-                self._update_preview(
-                    sliders,
-                    preview,
-                    hex_label,
-                    channel_index=(
-                        "RGB".index(
-                            c
-                        )
-                    )
-                )
-            )
-
-            sliders.append(slider)
-
-            row = BoxLayout(
-                spacing=dp(6)
-            )
-
-            row.add_widget(
-                Label(
-                    text=channel,
-                    size_hint_x=0.08
-                )
-            )
-
-            row.add_widget(slider)
-
-            content.add_widget(row)
+        content.add_widget(picker)
 
         buttons = BoxLayout(
             size_hint_y=None,
@@ -1505,17 +1442,14 @@ class ChatScreen(Screen):
         popup = Popup(
             title=f"Color: {key}",
             content=content,
-            size_hint=(0.85, 0.65),
+            size_hint=(0.95, 0.85),
         )
 
         def save(_):
 
-            rgba = (
-                sliders[0].value,
-                sliders[1].value,
-                sliders[2].value,
-                1
-            )
+            rgba = tuple(
+                picker.color[:3]
+            ) + (1,)
 
             set_custom_color(
                 key, rgba
@@ -1579,34 +1513,6 @@ class ChatScreen(Screen):
         content.add_widget(buttons)
 
         popup.open()
-
-        self._update_preview(
-            sliders,
-            preview,
-            hex_label,
-            channel_index=0
-        )
-
-    def _update_preview(
-        self,
-        sliders,
-        preview,
-        hex_label,
-        channel_index
-    ):
-
-        rgba = (
-            sliders[0].value,
-            sliders[1].value,
-            sliders[2].value,
-            1
-        )
-
-        preview.background_color = rgba
-
-        hex_label.text = (
-            self.rgba_to_hex(rgba)
-        )
 
     def rgba_to_hex(
         self,
