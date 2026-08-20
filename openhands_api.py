@@ -201,11 +201,13 @@ class OpenHandsAPI:
         conversation_id,
         limit=100,
         page_start=None,
-        max_pages=4
+        max_pages=20
     ):
 
         all_items = []
         page_id = page_start
+        last_offset = page_start or 0
+        last_count = 0
 
         for _ in range(max_pages):
 
@@ -235,6 +237,9 @@ class OpenHandsAPI:
 
             all_items.extend(items)
 
+            last_offset = page_id or 0
+            last_count = len(items)
+
             if len(items) < limit:
                 break
 
@@ -247,7 +252,12 @@ class OpenHandsAPI:
             if not page_id:
                 break
 
-        return all_items
+        cursor = None
+
+        if all_items:
+            cursor = last_offset + last_count
+
+        return all_items, cursor
 
     # =========================================================
     # EVENT COUNT

@@ -719,7 +719,7 @@ class ChatScreen(Screen):
 
         self._poll_active = False
 
-        self.event_count = None
+        self.event_cursor = None
 
         # ----------------------------------------------------
         # ROOT
@@ -1340,7 +1340,7 @@ class ChatScreen(Screen):
 
         self.seen_event_ids.clear()
 
-        self.event_count = None
+        self.event_cursor = None
 
         self.finished = False
 
@@ -1506,50 +1506,17 @@ class ChatScreen(Screen):
             if self.finished:
                 return
 
-            count_result = (
-                self.api.count_events(
-                    self.conversation_id
-                )
-            )
-
-            new_count = int(count_result)
-
-            if (
-                self.event_count is not None
-                and new_count <= self.event_count
-            ):
-                return
-
-            if self.event_count is None:
-
-                # First poll: only grab the
-                # newest page of history.
-                page_start = (
-                    ((new_count - 1) // 100) * 100
-                    if new_count > 0
-                    else None
-                )
-
-            else:
-
-                # Fetches from the page where
-                # we last stopped; overlap is
-                # deduped by seen_event_ids.
-                page_start = (
-                    (self.event_count // 100)
-                    * 100
-                )
-
-            self.event_count = new_count
-
-            events = (
+            events, cursor = (
                 self.api.search_events(
                     self.conversation_id,
                     limit=100,
-                    page_start=page_start,
-                    max_pages=4
+                    page_start=self.event_cursor,
+                    max_pages=20
                 )
             )
+
+            if cursor is not None:
+                self.event_cursor = cursor
 
             if not events:
                 return
@@ -1699,15 +1666,28 @@ class ChatScreen(Screen):
                 "value"
             )
 
+            KNOWN_STATUSES = (
+                "idle",
+                "running",
+                "working",
+                "finished",
+                "error",
+                "cancelled",
+                "paused",
+                "ready",
+                "stuck"
+            )
+
             if isinstance(value, dict):
 
                 status = value.get(
                     "execution_status"
                 )
 
-            elif isinstance(
-                value,
-                str
+            elif (
+                isinstance(value, str)
+                and value.lower()
+                in KNOWN_STATUSES
             ):
 
                 status = value
