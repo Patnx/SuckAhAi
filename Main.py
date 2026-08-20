@@ -30,77 +30,60 @@ from openhands_api import OpenHandsAPI
 # THEME
 # ============================================================
 
-THEMES = {
-    "dark": {
-        "background": (0.10, 0.11, 0.15, 1),
-        "surface": (0.16, 0.18, 0.24, 1),
-        "accent": (0.25, 0.55, 0.95, 1),
-        "text": (0.92, 0.93, 0.96, 1),
-        "muted": (0.55, 0.58, 0.66, 1),
-        "you": (0.18, 0.45, 0.85, 1),
-        "ai": (0.22, 0.56, 0.32, 1),
-        "system": (0.35, 0.38, 0.46, 1),
-        "error": (0.75, 0.25, 0.25, 1),
-    },
-    "light": {
-        "background": (0.93, 0.94, 0.96, 1),
-        "surface": (0.84, 0.86, 0.90, 1),
-        "accent": (0.20, 0.45, 0.85, 1),
-        "text": (0.12, 0.13, 0.17, 1),
-        "muted": (0.40, 0.42, 0.48, 1),
-        "you": (0.20, 0.40, 0.78, 1),
-        "ai": (0.18, 0.45, 0.28, 1),
-        "system": (0.60, 0.63, 0.70, 1),
-        "error": (0.80, 0.22, 0.22, 1),
-    },
+DEFAULT_THEME = {
+    "background": (0.10, 0.11, 0.15, 1),
+    "surface": (0.16, 0.18, 0.24, 1),
+    "accent": (0.25, 0.55, 0.95, 1),
+    "text": (0.92, 0.93, 0.96, 1),
+    "muted": (0.55, 0.58, 0.66, 1),
+    "you": (0.18, 0.45, 0.85, 1),
+    "ai": (0.22, 0.56, 0.32, 1),
+    "system": (0.35, 0.38, 0.46, 1),
+    "error": (0.75, 0.25, 0.25, 1),
 }
 
-THEME = THEMES["dark"]
+COLOR_KEYS = list(DEFAULT_THEME.keys())
+
+CUSTOM_COLORS = {}
 
 
-def current_theme():
+def get_color(key):
 
-    return THEME
+    if key in CUSTOM_COLORS:
 
+        return CUSTOM_COLORS[key]
 
-def apply_theme(name):
-
-    global THEME
-
-    THEME = THEMES.get(
-        name,
-        THEMES["dark"]
-    )
+    return DEFAULT_THEME[key]
 
 
-BACKGROUND = THEME["background"]
-SURFACE = THEME["surface"]
-ACCENT = THEME["accent"]
-TEXT = THEME["text"]
-MUTED = THEME["muted"]
-YOU_COLOR = THEME["you"]
-AI_COLOR = THEME["ai"]
-SYSTEM_COLOR = THEME["system"]
-ERROR_COLOR = THEME["error"]
+def set_custom_color(key, rgba):
 
-SPEAKER_COLORS = {
-    "You": YOU_COLOR,
-    "OpenHands": AI_COLOR,
-    "SYSTEM": SYSTEM_COLOR,
-    "GIT CHANGES": SYSTEM_COLOR,
-    "GIT DIFF": SYSTEM_COLOR,
-}
+    CUSTOM_COLORS[key] = rgba
 
 
-def speaker_color(speaker):
+def load_custom_colors(settings):
 
-    if "ERROR" in speaker:
-        return THEME["error"]
+    colors = settings.get("colors", {})
 
-    return SPEAKER_COLORS.get(
-        speaker,
-        THEME["surface"]
-    )
+    for key, value in colors.items():
+
+        if (
+            isinstance(value, list)
+            and len(value) == 4
+        ):
+            set_custom_color(
+                key,
+                tuple(value)
+            )
+
+
+def save_custom_colors(settings):
+
+    settings["colors"] = {
+        key: list(value)
+        for key, value in
+        CUSTOM_COLORS.items()
+    }
 
 
 # ============================================================
@@ -207,13 +190,15 @@ class ChatMessage(Label):
             **kwargs
         )
 
+        self.speaker = speaker
+
         self.full_text = (
             f"{speaker}\n\n{message}"
         )
 
         self.text = self.full_text
 
-        self.color = TEXT
+        self.color = get_color("text")
 
         self.size_hint_y = None
 
@@ -222,9 +207,27 @@ class ChatMessage(Label):
             dp(12)
         )
 
-        color = speaker_color(
-            speaker
+        speaker_lower = (
+            speaker.lower()
         )
+
+        if "error" in speaker_lower:
+
+            bg_key = "error"
+
+        elif speaker_lower == "you":
+
+            bg_key = "you"
+
+        elif speaker_lower == "openhands":
+
+            bg_key = "ai"
+
+        else:
+
+            bg_key = "system"
+
+        color = get_color(bg_key)
 
         with self.canvas.before:
 
@@ -337,13 +340,13 @@ class SettingsScreen(Screen):
         title = Label(
             text="Settings",
             font_size=24,
-            color=TEXT
+            color=get_color("text")
         )
 
         back = Button(
             text="Back",
             size_hint_x=0.2,
-            background_color=ACCENT
+            background_color=get_color("accent")
         )
 
         back.bind(
@@ -369,7 +372,7 @@ class SettingsScreen(Screen):
         root.add_widget(
             Label(
                 text="OpenHands API Key",
-                color=TEXT,
+                color=get_color("text"),
                 size_hint_y=None,
                 height=dp(30)
             )
@@ -391,7 +394,7 @@ class SettingsScreen(Screen):
         show_button = Button(
             text="Show",
             size_hint_x=0.2,
-            background_color=ACCENT
+            background_color=get_color("accent")
         )
 
         show_button.bind(
@@ -418,7 +421,7 @@ class SettingsScreen(Screen):
             text="Save API Key",
             size_hint_y=None,
             height=dp(50),
-            background_color=AI_COLOR
+            background_color=get_color("ai")
         )
 
         save_button.bind(
@@ -437,7 +440,7 @@ class SettingsScreen(Screen):
             text="Test API Key",
             size_hint_y=None,
             height=dp(50),
-            background_color=ACCENT
+            background_color=get_color("accent")
         )
 
         self.test_button.bind(
@@ -474,7 +477,7 @@ class SettingsScreen(Screen):
         root.add_widget(
             Label(
                 text="Server URL",
-                color=TEXT,
+                color=get_color("text"),
                 size_hint_y=None,
                 height=dp(30)
             )
@@ -498,7 +501,7 @@ class SettingsScreen(Screen):
 
         self.status = Label(
             text="",
-            color=TEXT,
+            color=get_color("text"),
             size_hint_y=None,
             height=dp(100)
         )
@@ -781,12 +784,15 @@ class ChatScreen(Screen):
 
         self.stream_buffer = []
 
-        self.theme_name = (
-            load_settings()
-            .get("theme", "dark")
-        )
+        self.stream_pending = ""
 
-        apply_theme(self.theme_name)
+        self.code_box = None
+
+        self.code_buffer = []
+
+        load_custom_colors(
+            load_settings()
+        )
 
         # ----------------------------------------------------
         # ROOT
@@ -810,13 +816,13 @@ class ChatScreen(Screen):
         title = Label(
             text="OpenHands AI",
             font_size=22,
-            color=TEXT
+            color=get_color("text")
         )
 
         settings = Button(
             text="Settings",
             size_hint_x=0.2,
-            background_color=ACCENT
+            background_color=get_color("accent")
         )
 
         settings.bind(
@@ -861,7 +867,7 @@ class ChatScreen(Screen):
         self.start_button = Button(
             text="Start",
             size_hint_x=0.18,
-            background_color=ACCENT
+            background_color=get_color("accent")
         )
 
         self.start_button.bind(
@@ -891,12 +897,12 @@ class ChatScreen(Screen):
 
         self.status_label = Label(
             text="Status: NOT CONNECTED",
-            color=TEXT
+            color=get_color("text")
         )
 
         self.credits_label = Label(
             text="Credits: ?",
-            color=MUTED
+            color=get_color("muted")
         )
 
         status_row.add_widget(
@@ -957,7 +963,7 @@ class ChatScreen(Screen):
         self.send_button = Button(
             text="SEND",
             size_hint_x=0.18,
-            background_color=AI_COLOR
+            background_color=get_color("ai")
         )
 
         self.send_button.bind(
@@ -988,12 +994,12 @@ class ChatScreen(Screen):
 
         changes = Button(
             text="Git Changes",
-            background_color=ACCENT
+            background_color=get_color("accent")
         )
 
         diff = Button(
             text="Git Diff",
-            background_color=ACCENT
+            background_color=get_color("accent")
         )
 
         changes.bind(
@@ -1026,23 +1032,21 @@ class ChatScreen(Screen):
             spacing=dp(5)
         )
 
-        theme_toggle = ToggleButton(
-            text=(
-                "Light theme"
-                if self.theme_name == "dark"
-                else "Dark theme"
-            ),
-            background_color=ACCENT
+        colors_button = Button(
+            text="Colors",
+            background_color=(
+                get_color("accent")
+            )
         )
 
-        theme_toggle.bind(
-            on_press=self.on_theme_toggle
+        colors_button.bind(
+            on_press=self.open_color_editor
         )
 
-        self.theme_label = theme_toggle
+        self.colors_button = colors_button
 
         settings_row.add_widget(
-            self.theme_label
+            self.colors_button
         )
 
         root.add_widget(
@@ -1223,12 +1227,12 @@ class ChatScreen(Screen):
 
         save_button = Button(
             text="Save",
-            background_color=AI_COLOR
+            background_color=get_color("ai")
         )
 
         skip_button = Button(
             text="Skip",
-            background_color=MUTED
+            background_color=get_color("muted")
         )
 
         popup = Popup(
@@ -1293,36 +1297,230 @@ class ChatScreen(Screen):
         popup.open()
 
     # ========================================================
-    # THEME
+    # COLOR EDITOR
     # ========================================================
 
-    def on_theme_toggle(
+    def open_color_editor(
         self,
         widget
     ):
 
-        self.theme_name = (
-            "light"
-            if self.theme_name == "dark"
-            else "dark"
+        content = BoxLayout(
+            orientation="vertical",
+            spacing=dp(4),
+            padding=dp(8)
         )
 
-        apply_theme(self.theme_name)
+        scroll = ScrollView()
 
-        settings = load_settings()
-
-        settings["theme"] = self.theme_name
-
-        save_settings(settings)
-
-        self.theme_label.text = (
-            "Light theme"
-            if self.theme_name == "dark"
-            else "Dark theme"
+        rows = BoxLayout(
+            orientation="vertical",
+            size_hint_y=None,
+            spacing=dp(4)
         )
 
-        self.theme_label.background_color = (
-            THEME["accent"]
+        rows.bind(
+            minimum_height=
+            rows.setter("height")
+        )
+
+        scroll.add_widget(rows)
+
+        for key in COLOR_KEYS:
+
+            row = BoxLayout(
+                size_hint_y=None,
+                height=dp(40),
+                spacing=dp(6)
+            )
+
+            btn = Button(
+                text=key,
+                background_color=(
+                    get_color(key)
+                )
+            )
+
+            btn.bind(
+                on_release=lambda b, k=key:
+                self.edit_color(k, b)
+            )
+
+            row.add_widget(btn)
+
+            rows.add_widget(row)
+
+        content.add_widget(scroll)
+
+        close = Button(
+            text="Close",
+            size_hint_y=None,
+            height=dp(40)
+        )
+
+        popup = Popup(
+            title="Colors",
+            content=content,
+            size_hint=(0.9, 0.9)
+        )
+
+        close.bind(
+            on_release=lambda _: popup.dismiss()
+        )
+
+        content.add_widget(close)
+
+        popup.open()
+
+    def edit_color(
+        self,
+        key,
+        widget
+    ):
+
+        current = get_color(key)
+
+        content = BoxLayout(
+            orientation="vertical",
+            spacing=dp(6),
+            padding=dp(12)
+        )
+
+        label = Label(
+            text=f"Pick {key}:",
+            size_hint_y=None,
+            height=dp(28)
+        )
+
+        hex_input = TextInput(
+            text=self.rgba_to_hex(current),
+            multiline=False,
+            hint_text="#rrggbb"
+        )
+
+        buttons = BoxLayout(
+            size_hint_y=None,
+            height=dp(44),
+            spacing=dp(6)
+        )
+
+        save_btn = Button(text="Save")
+
+        reset_btn = Button(
+            text="Default"
+        )
+
+        popup = Popup(
+            title=f"Color: {key}",
+            content=content,
+            size_hint=(0.7, 0.4),
+        )
+
+        def save(_):
+
+            rgba = (
+                self.hex_to_rgba(
+                    hex_input.text
+                )
+            )
+
+            if rgba:
+
+                set_custom_color(
+                    key, rgba
+                )
+
+                settings = load_settings()
+
+                save_custom_colors(
+                    settings
+                )
+
+                save_settings(settings)
+
+                widget.background_color = (
+                    rgba
+                )
+
+                popup.dismiss()
+
+        def reset(_):
+
+            CUSTOM_COLORS.pop(
+                key, None
+            )
+
+            settings = load_settings()
+
+            save_custom_colors(
+                settings
+            )
+
+            save_settings(settings)
+
+            widget.background_color = (
+                DEFAULT_THEME[key]
+            )
+
+            popup.dismiss()
+
+        save_btn.bind(
+            on_release=save
+        )
+
+        reset_btn.bind(
+            on_release=reset
+        )
+
+        buttons.add_widget(save_btn)
+
+        buttons.add_widget(reset_btn)
+
+        content.add_widget(label)
+
+        content.add_widget(hex_input)
+
+        content.add_widget(buttons)
+
+        popup.open()
+
+    def hex_to_rgba(
+        self,
+        text
+    ):
+
+        text = text.strip().lstrip("#")
+
+        if len(text) != 6:
+            return None
+
+        try:
+
+            rgb = tuple(
+                int(text[i:i+2], 16) / 255
+                for i in (0, 2, 4)
+            )
+
+            return (
+                rgb[0],
+                rgb[1],
+                rgb[2],
+                1
+            )
+
+        except ValueError:
+
+            return None
+
+    def rgba_to_hex(
+        self,
+        rgba
+    ):
+
+        return "#{:02x}{:02x}{:02x}".format(
+            int(rgba[0] * 255),
+            int(rgba[1] * 255),
+            int(rgba[2] * 255)
         )
 
     # ========================================================
@@ -2206,34 +2404,197 @@ class ChatScreen(Screen):
                 )
             )
 
-            if delta:
+            if not delta:
+                return
 
-                self.stream_buffer.append(delta)
+            in_code = (
+                "```" in delta
+            )
 
-                if self.stream_label is None:
+            if in_code:
 
-                    self.stream_label = (
-                        ChatMessage(
-                            "OpenHands",
-                            ""
+                # Code block start:
+                # flush text, open code panel
+                self.flush_stream_text()
+
+                if (
+                    self.code_box
+                    is None
+                ):
+
+                    self.open_code_panel()
+
+                # Strip the backticks
+                # and language tag
+                cleaned = (
+                    delta.split(
+                        "```", 1
+                    )[-1]
+                )
+
+                if cleaned.strip():
+
+                    self.code_buffer.append(
+                        cleaned
+                    )
+
+            elif self.code_box is not None:
+
+                # Inside a code block
+                self.code_buffer.append(
+                    delta
+                )
+
+                if (
+                    "```"
+                    in self.code_buffer
+                ):
+
+                    # Code block end: close panel
+                    combined = "".join(
+                        self.code_buffer
+                    )
+
+                    body, _, _ = (
+                        combined.partition(
+                            "```"
                         )
                     )
 
-                    self.chat.add_widget(
-                        self.stream_label
+                    self.code_buffer = []
+
+                    self.close_code_panel(
+                        body
                     )
 
-                self.stream_label.full_text = (
-                    "OpenHands\n\n"
-                    + "".join(
-                        self.stream_buffer
-                    )
-                )
+            else:
 
-                self.stream_label.text = (
-                    self.stream_label
-                    .full_text
+                # Normal text: buffer
+                # until sentence end
+                self.stream_pending += delta
+
+                if self._sentence_end(
+                    self.stream_pending
+                ):
+
+                    self.flush_stream_text()
+
+    # ========================================================
+    # STREAM HELPERS
+    # ========================================================
+
+    def _sentence_end(self, text):
+
+        stripped = text.rstrip()
+
+        if not stripped:
+            return False
+
+        return stripped[-1] in (
+            ".", "!", "?",
+            "\n", ":"
+        )
+
+    def flush_stream_text(self):
+
+        if not self.stream_pending:
+            return
+
+        self.stream_buffer.append(
+            self.stream_pending
+        )
+
+        self.stream_pending = ""
+
+        if self.stream_label is None:
+
+            self.stream_label = (
+                ChatMessage(
+                    "OpenHands",
+                    ""
                 )
+            )
+
+            self.chat.add_widget(
+                self.stream_label
+            )
+
+        self.stream_label.full_text = (
+            "OpenHands\n\n"
+            + "".join(
+                self.stream_buffer
+            )
+        )
+
+        self.stream_label.text = (
+            self.stream_label
+            .full_text
+        )
+
+    def open_code_panel(self):
+
+        self.code_box = BoxLayout(
+            orientation="vertical",
+            size_hint_y=None,
+            spacing=dp(4),
+            padding=dp(6)
+        )
+
+        self.code_label = Label(
+            text="",
+            size_hint_y=None,
+            color=get_color(
+                "text"
+            )
+        )
+
+        self.code_label.bind(
+            texture_size=lambda w, s:
+            setattr(
+                w, "height",
+                s[1] + dp(10)
+            )
+        )
+
+        self.code_box.add_widget(
+            self.code_label
+        )
+
+        copy_btn = Button(
+            text="Copy",
+            size_hint_y=None,
+            height=dp(34)
+        )
+
+        copy_btn.bind(
+            on_release=lambda _:
+            Clipboard.copy(
+                "".join(
+                    self.code_buffer
+                )
+            )
+        )
+
+        self.code_box.add_widget(
+            copy_btn
+        )
+
+        self.chat.add_widget(
+            self.code_box
+        )
+
+    def close_code_panel(
+        self,
+        body
+    ):
+
+        if self.code_label is not None:
+
+            self.code_label.text = body
+
+        self.code_box = None
+
+        self.code_label = None
 
     # ========================================================
     # FINISHED CHECK
@@ -2264,6 +2625,21 @@ class ChatScreen(Screen):
             self.poll_event = None
 
         self.send_button.disabled = False
+
+        # Flush any pending
+        # text before checking
+        # for a reply.
+        self.flush_stream_text()
+
+        if self.code_box is not None:
+
+            self.close_code_panel(
+                "".join(
+                    self.code_buffer
+                )
+            )
+
+            self.code_buffer = []
 
         if (
             not self.reply_received
@@ -2302,6 +2678,8 @@ class ChatScreen(Screen):
             )
 
         self.stream_buffer = []
+
+        self.stream_pending = ""
 
         self.stream_label = None
 
