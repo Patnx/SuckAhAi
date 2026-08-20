@@ -784,6 +784,8 @@ class ChatScreen(Screen):
 
         self.repos_cache = []
 
+        self.loading_history = False
+
         self.stream_label = None
 
         self.stream_buffer = []
@@ -1669,9 +1671,11 @@ class ChatScreen(Screen):
 
         self.event_cursor = None
 
-        self.finished = True
+        self.finished = False
 
-        self.reply_received = True
+        self.reply_received = False
+
+        self.loading_history = True
 
         if self.poll_event is not None:
 
@@ -1724,11 +1728,29 @@ class ChatScreen(Screen):
                 )
             )
 
+            Clock.schedule_once(
+                lambda dt:
+                setattr(
+                    self,
+                    "loading_history",
+                    False
+                )
+            )
+
         except Exception as error:
 
             print(
                 "History load error:",
                 error
+            )
+
+            Clock.schedule_once(
+                lambda dt:
+                setattr(
+                    self,
+                    "loading_history",
+                    False
+                )
             )
 
     # ========================================================
@@ -2891,7 +2913,10 @@ class ChatScreen(Screen):
 
         self.stream_label = None
 
-        if not self.reply_received:
+        if (
+            not self.reply_received
+            and not self.loading_history
+        ):
 
             self.add_message(
                 "SYSTEM",
