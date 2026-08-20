@@ -1049,6 +1049,25 @@ class ChatScreen(Screen):
             self.colors_button
         )
 
+        history_button = Button(
+            text="History",
+            background_color=(
+                get_color("accent")
+            )
+        )
+
+        history_button.bind(
+            on_press=self.open_history
+        )
+
+        self.history_button = (
+            history_button
+        )
+
+        settings_row.add_widget(
+            self.history_button
+        )
+
         root.add_widget(
             settings_row
         )
@@ -1522,6 +1541,212 @@ class ChatScreen(Screen):
             int(rgba[1] * 255),
             int(rgba[2] * 255)
         )
+
+    # ========================================================
+    # HISTORY
+    # ========================================================
+
+    def open_history(
+        self,
+        widget
+    ):
+
+        if not self.api:
+            return
+
+        content = BoxLayout(
+            orientation="vertical",
+            spacing=dp(6),
+            padding=dp(12)
+        )
+
+        loading = Label(
+            text="Loading conversations..."
+        )
+
+        scroll = ScrollView()
+
+        rows = BoxLayout(
+            orientation="vertical",
+            size_hint_y=None,
+            spacing=dp(4)
+        )
+
+        rows.bind(
+            minimum_height=
+            rows.setter("height")
+        )
+
+        scroll.add_widget(rows)
+
+        content.add_widget(loading)
+
+        content.add_widget(scroll)
+
+        popup = Popup(
+            title="Past conversations",
+            content=content,
+            size_hint=(0.9, 0.9)
+        )
+
+        def _worker():
+
+            try:
+
+                conversations = (
+                    self.api.list_conversations(
+                        limit=50
+                    )
+                )
+
+            except Exception as error:
+
+                print(
+                    "History error:",
+                    error
+                )
+
+                conversations = []
+
+            def _populate(dt):
+
+                if not conversations:
+
+                    loading.text = (
+                        "No conversations found."
+                    )
+
+                for conv in sorted(
+                    conversations,
+                    key=lambda c: c.get(
+                        "updated_at", ""
+                    ),
+                    reverse=True
+                ):
+
+                    title = (
+                        conv.get(
+                            "title"
+                        )
+                        or conv.get(
+                            "id",
+                            "(untitled)"
+                        )
+                    )
+
+                    label = (
+                        title
+                        + "\n"
+                        + conv.get(
+                            "id",
+                            ""
+                        )
+                    )
+
+                    btn = Button(
+                        text=label,
+                        size_hint_y=None,
+                        height=dp(56)
+                    )
+
+                    btn.bind(
+                        on_release=lambda b, cid=(
+                            conv.get("id")
+                        ):
+                        self.load_conversation(
+                            cid
+                        )
+                    )
+
+                    rows.add_widget(btn)
+
+                loading.text = (
+                    "Tap a conversation to load it."
+                )
+
+            Clock.schedule_once(_populate)
+
+        threading.Thread(
+            target=_worker,
+            daemon=True
+        ).start()
+
+        popup.open()
+
+    def load_conversation(
+        self,
+        conversation_id
+    ):
+
+        self.conversation_id = (
+            conversation_id
+        )
+
+        self.seen_event_ids.clear()
+
+        self.event_cursor = None
+
+        self.finished = True
+
+        self.reply_received = True
+
+        if self.poll_event is not None:
+
+            self.poll_event.cancel()
+
+            self.poll_event = None
+
+        self.add_message(
+            "SYSTEM",
+            (
+                "Loaded conversation: "
+                + conversation_id
+            )
+        )
+
+        threading.Thread(
+            target=(
+                lambda:
+                self._load_history(
+                    conversation_id
+                )
+            ),
+            daemon=True
+        ).start()
+
+    def _load_history(
+        self,
+        conversation_id
+    ):
+
+        try:
+
+            events, cursor = (
+                self.api.search_events(
+                    conversation_id,
+                    limit=100,
+                    page_start=None,
+                    max_pages=20
+                )
+            )
+
+            if cursor is not None:
+                self.event_cursor = cursor
+
+            Clock.schedule_once(
+                lambda dt,
+                events=events:
+                self.process_conversation(
+                    events
+                )
+            )
+
+        except Exception as error:
+
+            print(
+                "History load error:",
+                error
+            )
 
     # ========================================================
     # API
