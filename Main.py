@@ -717,6 +717,8 @@ class ChatScreen(Screen):
 
         self.reply_received = False
 
+        self._poll_active = False
+
         # ----------------------------------------------------
         # ROOT
         # ----------------------------------------------------
@@ -1481,6 +1483,11 @@ class ChatScreen(Screen):
         if not self.conversation_id:
             return
 
+        if self._poll_active:
+            return
+
+        self._poll_active = True
+
         threading.Thread(
             target=self._conversation_worker,
             daemon=True
@@ -1490,10 +1497,10 @@ class ChatScreen(Screen):
         self
     ):
 
-        if self.finished:
-            return
-
         try:
+
+            if self.finished:
+                return
 
             events = (
                 self.api.search_events(
@@ -1524,6 +1531,10 @@ class ChatScreen(Screen):
                     error_text
                 )
             )
+
+        finally:
+
+            self._poll_active = False
 
     # ========================================================
     # PROCESS CONVERSATION
@@ -1883,17 +1894,6 @@ class ChatScreen(Screen):
         result
     ):
 
-        print(
-            "\n--- CREDITS ---"
-        )
-
-        print(
-            json.dumps(
-                result,
-                indent=2
-            )
-        )
-
         value = (
             self.find_credit_value(
                 result
@@ -1906,10 +1906,28 @@ class ChatScreen(Screen):
                 f"Credits: {value}"
             )
 
+            try:
+                numeric = float(
+                    str(value)
+                    .replace("$", "")
+                    .replace(",", "")
+                )
+
+                if numeric <= 0:
+
+                    self.add_message(
+                        "SYSTEM",
+                        "Out of credits. The agent "
+                        "won't respond until you top up."
+                    )
+
+            except ValueError:
+                pass
+
         else:
 
             self.credits_label.text = (
-                "Credits: see console"
+                "Credits: unknown"
             )
 
     def find_credit_value(
