@@ -2,6 +2,8 @@ import os
 import json
 import threading
 
+import requests
+
 from kivy.app import App
 from kivy.clock import Clock
 from kivy.metrics import dp
@@ -12,6 +14,9 @@ from kivy.uix.button import Button
 from kivy.uix.label import Label
 from kivy.uix.textinput import TextInput
 from kivy.uix.scrollview import ScrollView
+from kivy.uix.dropdown import DropDown
+from kivy.uix.popup import Popup
+from kivy.uix.togglebutton import ToggleButton
 
 from kivy.uix.screenmanager import (
     ScreenManager,
@@ -25,15 +30,58 @@ from openhands_api import OpenHandsAPI
 # THEME
 # ============================================================
 
-BACKGROUND = (0.10, 0.11, 0.15, 1)
-SURFACE = (0.16, 0.18, 0.24, 1)
-ACCENT = (0.25, 0.55, 0.95, 1)
-TEXT = (0.92, 0.93, 0.96, 1)
-MUTED = (0.55, 0.58, 0.66, 1)
-YOU_COLOR = (0.18, 0.45, 0.85, 1)
-AI_COLOR = (0.22, 0.56, 0.32, 1)
-SYSTEM_COLOR = (0.35, 0.38, 0.46, 1)
-ERROR_COLOR = (0.75, 0.25, 0.25, 1)
+THEMES = {
+    "dark": {
+        "background": (0.10, 0.11, 0.15, 1),
+        "surface": (0.16, 0.18, 0.24, 1),
+        "accent": (0.25, 0.55, 0.95, 1),
+        "text": (0.92, 0.93, 0.96, 1),
+        "muted": (0.55, 0.58, 0.66, 1),
+        "you": (0.18, 0.45, 0.85, 1),
+        "ai": (0.22, 0.56, 0.32, 1),
+        "system": (0.35, 0.38, 0.46, 1),
+        "error": (0.75, 0.25, 0.25, 1),
+    },
+    "light": {
+        "background": (0.93, 0.94, 0.96, 1),
+        "surface": (0.84, 0.86, 0.90, 1),
+        "accent": (0.20, 0.45, 0.85, 1),
+        "text": (0.12, 0.13, 0.17, 1),
+        "muted": (0.40, 0.42, 0.48, 1),
+        "you": (0.20, 0.40, 0.78, 1),
+        "ai": (0.18, 0.45, 0.28, 1),
+        "system": (0.60, 0.63, 0.70, 1),
+        "error": (0.80, 0.22, 0.22, 1),
+    },
+}
+
+THEME = THEMES["dark"]
+
+
+def current_theme():
+
+    return THEME
+
+
+def apply_theme(name):
+
+    global THEME
+
+    THEME = THEMES.get(
+        name,
+        THEMES["dark"]
+    )
+
+
+BACKGROUND = THEME["background"]
+SURFACE = THEME["surface"]
+ACCENT = THEME["accent"]
+TEXT = THEME["text"]
+MUTED = THEME["muted"]
+YOU_COLOR = THEME["you"]
+AI_COLOR = THEME["ai"]
+SYSTEM_COLOR = THEME["system"]
+ERROR_COLOR = THEME["error"]
 
 SPEAKER_COLORS = {
     "You": YOU_COLOR,
@@ -47,11 +95,11 @@ SPEAKER_COLORS = {
 def speaker_color(speaker):
 
     if "ERROR" in speaker:
-        return ERROR_COLOR
+        return THEME["error"]
 
     return SPEAKER_COLORS.get(
         speaker,
-        SURFACE
+        THEME["surface"]
     )
 
 
@@ -725,6 +773,21 @@ class ChatScreen(Screen):
 
         self.event_cursor = None
 
+        self.repo_dropdown = None
+
+        self.repos_cache = []
+
+        self.stream_label = None
+
+        self.stream_buffer = []
+
+        self.theme_name = (
+            load_settings()
+            .get("theme", "dark")
+        )
+
+        apply_theme(self.theme_name)
+
         # ----------------------------------------------------
         # ROOT
         # ----------------------------------------------------
@@ -783,8 +846,16 @@ class ChatScreen(Screen):
         )
 
         self.repo_input = TextInput(
-            hint_text="GitHub repository: username/repository",
+            hint_text="GitHub repository: user/repo or tap to pick",
             multiline=False
+        )
+
+        self.repo_input.bind(
+            text=self.on_repo_text,
+            focus=(
+                lambda w, focused:
+                self.maybe_open_dropdown(focused)
+            )
         )
 
         self.start_button = Button(
@@ -945,8 +1016,313 @@ class ChatScreen(Screen):
             git_row
         )
 
+        # ----------------------------------------------------
+        # SETTINGS ROW
+        # ----------------------------------------------------
+
+        settings_row = BoxLayout(
+            size_hint_y=None,
+            height=dp(45),
+            spacing=dp(5)
+        )
+
+        theme_toggle = ToggleButton(
+            text=(
+                "Light theme"
+                if self.theme_name == "dark"
+                else "Dark theme"
+            ),
+            background_color=ACCENT
+        )
+
+        theme_toggle.bind(
+            on_press=self.on_theme_toggle
+        )
+
+        self.theme_label = theme_toggle
+
+        settings_row.add_widget(
+            self.theme_label
+        )
+
+        root.add_widget(
+            settings_row
+        )
+
         self.add_widget(
             root
+        )
+
+        Clock.schedule_once(
+            lambda dt:
+            self.ask_github_username()
+        )
+
+    # ========================================================
+    # REPO DROPDOWN
+    # ========================================================
+
+    def maybe_open_dropdown(
+        self,
+        focused
+    ):
+
+        if focused:
+            self.refresh_repos()
+        elif self.repo_dropdown is not None:
+            self.repo_dropdown.dismiss()
+
+    def on_repo_text(
+        self,
+        widget,
+        text
+    ):
+
+        self.refresh_repos(prefix=text)
+
+    def refresh_repos(
+        self,
+        prefix=""
+    ):
+
+        if self.repo_dropdown is not None:
+
+            self.repo_dropdown.dismiss()
+
+        dropdown = DropDown()
+
+        for name in self.repos_cache:
+
+            if (
+                prefix
+                and prefix.lower()
+                not in name.lower()
+            ):
+                continue
+
+            btn = Button(
+                text=name,
+                size_hint_y=None,
+                height=dp(40)
+            )
+
+            btn.bind(
+                on_release=lambda b:
+                self.select_repo(b)
+            )
+
+            dropdown.add_widget(btn)
+
+        if dropdown.container.children:
+
+            dropdown.open(
+                self.repo_input
+            )
+
+            self.repo_dropdown = dropdown
+
+    def select_repo(
+        self,
+        button
+    ):
+
+        self.repo_input.text = button.text
+
+        if self.repo_dropdown is not None:
+
+            self.repo_dropdown.dismiss()
+
+            self.repo_dropdown = None
+
+    def fetch_user_repos(
+        self,
+        username
+    ):
+
+        try:
+
+            response = requests.get(
+                (
+                    f"https://api.github.com/"
+                    f"users/{username}/repos"
+                ),
+                params={
+                    "per_page": 100,
+                    "type": "owner"
+                },
+                timeout=5
+            )
+
+            response.raise_for_status()
+
+            self.repos_cache = [
+                r.get("full_name", "")
+                for r in response.json()
+                if r.get("full_name")
+            ]
+
+        except Exception as error:
+
+            print(
+                "Repo fetch error:",
+                error
+            )
+
+    # ========================================================
+    # GITHUB USERNAME POPUP
+    # ========================================================
+
+    def ask_github_username(self):
+
+        settings = load_settings()
+
+        if settings.get("github_user") is not None:
+
+            github_user = (
+                settings["github_user"]
+            )
+
+            if github_user:
+
+                threading.Thread(
+                    target=(
+                        lambda: self.fetch_user_repos(
+                            github_user
+                        )
+                    ),
+                    daemon=True
+                ).start()
+
+            return
+
+        content = BoxLayout(
+            orientation="vertical",
+            spacing=dp(8),
+            padding=dp(12)
+        )
+
+        label = Label(
+            text=(
+                "Optional: your GitHub username\n"
+                "(lets me list your public repos)."
+            ),
+            size_hint_y=None,
+            height=dp(60)
+        )
+
+        username_input = TextInput(
+            hint_text="GitHub username",
+            multiline=False
+        )
+
+        buttons = BoxLayout(
+            size_hint_y=None,
+            height=dp(44),
+            spacing=dp(6)
+        )
+
+        save_button = Button(
+            text="Save",
+            background_color=AI_COLOR
+        )
+
+        skip_button = Button(
+            text="Skip",
+            background_color=MUTED
+        )
+
+        popup = Popup(
+            title="GitHub username",
+            content=content,
+            size_hint=(0.8, 0.4),
+            auto_dismiss=False
+        )
+
+        def save(_):
+
+            settings = load_settings()
+
+            settings["github_user"] = (
+                username_input.text
+                .strip()
+                or None
+            )
+
+            save_settings(settings)
+
+            popup.dismiss()
+
+            if settings["github_user"]:
+
+                threading.Thread(
+                    target=(
+                        lambda:
+                        self.fetch_user_repos(
+                            settings[
+                                "github_user"
+                            ]
+                        )
+                    ),
+                    daemon=True
+                ).start()
+
+        def skip(_):
+
+            settings = load_settings()
+
+            settings["github_user"] = None
+
+            save_settings(settings)
+
+            popup.dismiss()
+
+        save_button.bind(on_press=save)
+
+        skip_button.bind(on_press=skip)
+
+        buttons.add_widget(save_button)
+
+        buttons.add_widget(skip_button)
+
+        content.add_widget(label)
+
+        content.add_widget(username_input)
+
+        content.add_widget(buttons)
+
+        popup.open()
+
+    # ========================================================
+    # THEME
+    # ========================================================
+
+    def on_theme_toggle(
+        self,
+        widget
+    ):
+
+        self.theme_name = (
+            "light"
+            if self.theme_name == "dark"
+            else "dark"
+        )
+
+        apply_theme(self.theme_name)
+
+        settings = load_settings()
+
+        settings["theme"] = self.theme_name
+
+        save_settings(settings)
+
+        self.theme_label.text = (
+            "Light theme"
+            if self.theme_name == "dark"
+            else "Dark theme"
+        )
+
+        self.theme_label.background_color = (
+            THEME["accent"]
         )
 
     # ========================================================
@@ -1793,9 +2169,70 @@ class ChatScreen(Screen):
 
                 self.send_button.disabled = False
 
+                if self.stream_label is not None:
+
+                    self.stream_buffer = []
+
+                    self.stream_label.full_text = (
+                        f"OpenHands\n\n{text}"
+                    )
+
+                    self.stream_label.text = (
+                        self.stream_label
+                        .full_text
+                    )
+
+                    self.stream_label = None
+
+                    return
+
                 self.add_message(
                     "OpenHands",
                     text
+                )
+
+        # ----------------------------------------------------
+        # STREAMING EVENT
+        # ----------------------------------------------------
+
+        if (
+            "delta" in kind.lower()
+            and source == "agent"
+        ):
+
+            delta = (
+                self.extract_text(
+                    event
+                )
+            )
+
+            if delta:
+
+                self.stream_buffer.append(delta)
+
+                if self.stream_label is None:
+
+                    self.stream_label = (
+                        ChatMessage(
+                            "OpenHands",
+                            ""
+                        )
+                    )
+
+                    self.chat.add_widget(
+                        self.stream_label
+                    )
+
+                self.stream_label.full_text = (
+                    "OpenHands\n\n"
+                    + "".join(
+                        self.stream_buffer
+                    )
+                )
+
+                self.stream_label.text = (
+                    self.stream_label
+                    .full_text
                 )
 
     # ========================================================
