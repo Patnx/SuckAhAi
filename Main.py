@@ -63,6 +63,11 @@ EVENT_CHUNK = 20
 # poll interval so stalls stay short.
 NETWORK_TIMEOUT = 5
 
+# History pulls every event page,
+# so it needs a much longer budget
+# than live polling.
+HISTORY_TIMEOUT = 60
+
 KNOWN_STATUSES = frozenset((
     "idle",
     "running",
@@ -1865,7 +1870,7 @@ class ChatScreen(Screen):
                     page_start=None,
                     max_pages=20,
                     on_page=_render_page,
-                    timeout=NETWORK_TIMEOUT
+                    timeout=HISTORY_TIMEOUT
                 )
             )
 
@@ -1877,6 +1882,18 @@ class ChatScreen(Screen):
             print(
                 "History load error:",
                 error
+            )
+
+            error_text = str(error)
+
+            Clock.schedule_once(
+                lambda dt,
+                error_text=error_text:
+                self.add_message(
+                    "SYSTEM",
+                    "Could not load history:\n\n"
+                    + error_text
+                )
             )
 
         Clock.schedule_once(
