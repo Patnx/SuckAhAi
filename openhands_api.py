@@ -176,15 +176,13 @@ class OpenHandsAPI:
     ):
 
         data = {
-            "message": {
-                "role": "user",
-                "content": [
-                    {
-                        "type": "text",
-                        "text": message
-                    }
-                ]
-            }
+            "role": "user",
+            "content": [
+                {
+                    "type": "text",
+                    "text": message
+                }
+            ]
         }
 
         return self._request(
