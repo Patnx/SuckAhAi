@@ -2580,44 +2580,64 @@ class ChatScreen(Screen):
         # MESSAGE EVENT
         # ----------------------------------------------------
 
-        if (
-            kind == "MessageEvent"
-            and source == "agent"
-        ):
+        if kind == "MessageEvent":
 
-            text = (
-                self.extract_text(
-                    event.get("llm_message") or {}
+            if source == "user":
+
+                text = (
+                    self.extract_text(
+                        event.get(
+                            "llm_message"
+                        ) or event
+                    )
                 )
-            )
 
-            if text:
+                if text:
 
-                self.reply_received = True
-
-                self.send_button.disabled = False
-
-                if self.stream_label is not None:
-
-                    self.stream_buffer = []
-
-                    self.stream_label.full_text = (
-                        f"OpenHands\n\n{text}"
+                    self.add_message(
+                        "You",
+                        text
                     )
 
-                    self.stream_label.text = (
-                        self.stream_label
-                        .full_text
+                return
+
+            if source == "agent":
+
+                text = (
+                    self.extract_text(
+                        event.get(
+                            "llm_message"
+                        ) or {}
                     )
-
-                    self.stream_label = None
-
-                    return
-
-                self.add_message(
-                    "OpenHands",
-                    text
                 )
+
+                if text:
+
+                    self.reply_received = True
+
+                    self.send_button.disabled = False
+
+                    if self.stream_label is not None:
+
+                        self.stream_buffer = []
+
+                        self.stream_label.full_text = (
+                            f"OpenHands\n\n{text}"
+                        )
+
+                        self.stream_label.text = (
+                            self.stream_label
+                            .full_text
+                        )
+
+                        self.stream_label = None
+
+                        return
+
+                    self.add_message(
+                        "OpenHands",
+                        text
+                    )
 
         # ----------------------------------------------------
         # STREAMING EVENT
