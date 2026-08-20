@@ -63,11 +63,6 @@ EVENT_CHUNK = 20
 # poll interval so stalls stay short.
 NETWORK_TIMEOUT = 5
 
-# History pulls every event page,
-# so it needs a much longer budget
-# than live polling.
-HISTORY_TIMEOUT = 60
-
 KNOWN_STATUSES = frozenset((
     "idle",
     "running",
@@ -1847,9 +1842,10 @@ class ChatScreen(Screen):
         conversation_id
     ):
 
-        # Render each page as soon as
-        # it lands instead of waiting
-        # for the whole fetch.
+        # Small pages, one retry each:
+        # a 100-event page times out on
+        # slow connections, so fetch 25
+        # at a time and render as we go.
 
         def _render_page(items):
 
@@ -1861,21 +1857,95 @@ class ChatScreen(Screen):
                 )
             )
 
+        def _fetch_page(page_id):
+
+            params = {
+                "limit": 25
+            }
+
+            if page_id:
+                params["page_id"] = page_id
+
+            for attempt in range(2):
+
+                try:
+
+                    return self.api._request(
+                        "GET",
+                        "/api/v1/conversation/"
+                        + conversation_id
+                        + "/events/search",
+                        params=params,
+                        timeout=30
+                    )
+
+                except RuntimeError as error:
+
+                    if attempt == 1:
+                        raise
+
+                    print(
+                        "History page retry:",
+                        error
+                    )
+
+        page_id = None
+
+        last_next_id = None
+
         try:
 
-            _, cursor = (
-                self.api.search_events(
-                    conversation_id,
-                    limit=100,
-                    page_start=None,
-                    max_pages=20,
-                    on_page=_render_page,
-                    timeout=HISTORY_TIMEOUT
-                )
-            )
+            for _ in range(80):
 
-            if cursor is not None:
-                self.event_cursor = cursor
+                result = _fetch_page(page_id)
+
+                if isinstance(
+                    result,
+                    dict
+                ):
+
+                    items = result.get(
+                        "items", []
+                    )
+
+                    next_id = result.get(
+                        "next_page_id"
+                    )
+
+                elif isinstance(
+                    result,
+                    list
+                ):
+
+                    items = result
+
+                    next_id = None
+
+                else:
+
+                    break
+
+                if not items:
+                    break
+
+                _render_page(items)
+
+                if next_id:
+                    last_next_id = next_id
+
+                if len(items) < 25:
+                    break
+
+                page_id = next_id
+
+                if not page_id:
+                    break
+
+            if last_next_id:
+
+                self.event_cursor = (
+                    last_next_id
+                )
 
         except Exception as error:
 
