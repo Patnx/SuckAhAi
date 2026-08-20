@@ -459,7 +459,9 @@ class SettingsScreen(Screen):
             text="Delete Saved Key",
             size_hint_y=None,
             height=dp(50),
-            background_color=ERROR_COLOR
+            background_color=get_color(
+                "error"
+            )
         )
 
         delete_button.bind(
