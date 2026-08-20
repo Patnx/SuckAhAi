@@ -1641,11 +1641,24 @@ class ChatScreen(Screen):
 
             value = event.get(
                 "value"
-            ) or {}
-
-            status = value.get(
-                "execution_status"
             )
+
+            if isinstance(value, dict):
+
+                status = value.get(
+                    "execution_status"
+                )
+
+            elif isinstance(
+                value,
+                str
+            ):
+
+                status = value
+
+            else:
+
+                status = None
 
             if status:
 
