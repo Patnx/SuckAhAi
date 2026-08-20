@@ -1650,15 +1650,19 @@ class ChatScreen(Screen):
 
             if self.debug_enabled:
 
+                preview = (
+                    self.extract_text(
+                        event
+                    ) or ""
+                )
+
                 print(
                     "[EVENT]",
                     event.get("kind"),
                     "| source:",
                     event.get("source"),
                     "|",
-                    self.extract_text(
-                        event
-                    )[:80]
+                    preview[:80]
                 )
 
             self.process_event(
