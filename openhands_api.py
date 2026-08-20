@@ -200,11 +200,12 @@ class OpenHandsAPI:
         self,
         conversation_id,
         limit=100,
-        max_pages=3
+        page_start=None,
+        max_pages=4
     ):
 
         all_items = []
-        next_page_id = None
+        page_id = page_start
 
         for _ in range(max_pages):
 
@@ -212,8 +213,8 @@ class OpenHandsAPI:
                 "limit": limit
             }
 
-            if next_page_id:
-                params["next_page_id"] = next_page_id
+            if page_id:
+                params["page_id"] = page_id
 
             result = self._request(
                 "GET",
@@ -237,13 +238,13 @@ class OpenHandsAPI:
             if len(items) < limit:
                 break
 
-            next_page_id = (
+            page_id = (
                 result.get("next_page_id")
                 if isinstance(result, dict)
                 else None
             )
 
-            if not next_page_id:
+            if not page_id:
                 break
 
         return all_items
