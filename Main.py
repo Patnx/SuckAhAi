@@ -16,8 +16,6 @@ from kivy.uix.textinput import TextInput
 from kivy.uix.scrollview import ScrollView
 from kivy.uix.dropdown import DropDown
 from kivy.uix.popup import Popup
-from kivy.uix.togglebutton import ToggleButton
-from kivy.uix.slider import Slider
 from kivy.uix.colorpicker import ColorPicker
 
 from kivy.uix.screenmanager import (
@@ -47,6 +45,33 @@ DEFAULT_THEME = {
 COLOR_KEYS = list(DEFAULT_THEME.keys())
 
 CUSTOM_COLORS = {}
+
+# Poll this often so streamed
+# deltas feel live; each poll is
+# a single lightweight request.
+POLL_INTERVAL = 4
+
+# Events are rendered in slices
+# so history loads don't freeze
+# the UI on large batches.
+EVENT_CHUNK = 20
+
+# Bound poll/history requests;
+# a hung connection would pin the
+# worker flag for the default 90s.
+NETWORK_TIMEOUT = 20
+
+KNOWN_STATUSES = frozenset((
+    "idle",
+    "running",
+    "working",
+    "finished",
+    "error",
+    "cancelled",
+    "paused",
+    "ready",
+    "stuck"
+))
 
 
 def get_color(key):
@@ -657,7 +682,7 @@ class SettingsScreen(Screen):
                 server
             )
 
-            result = api.get_credits()
+            api.get_credits()
 
             Clock.schedule_once(
                 lambda dt:
@@ -778,6 +803,10 @@ class ChatScreen(Screen):
 
         self._poll_active = False
 
+        self._scroll_scheduled = (
+            False
+        )
+
         self.event_cursor = None
 
         self.repo_dropdown = None
@@ -795,6 +824,8 @@ class ChatScreen(Screen):
         self.code_box = None
 
         self.code_buffer = []
+
+        self.in_code = False
 
         load_custom_colors(
             load_settings()
@@ -1516,17 +1547,6 @@ class ChatScreen(Screen):
 
         popup.open()
 
-    def rgba_to_hex(
-        self,
-        rgba
-    ):
-
-        return "#{:02x}{:02x}{:02x}".format(
-            int(rgba[0] * 255),
-            int(rgba[1] * 255),
-            int(rgba[2] * 255)
-        )
-
     # ========================================================
     # HISTORY
     # ========================================================
@@ -1638,7 +1658,8 @@ class ChatScreen(Screen):
                         on_release=lambda b, cid=(
                             conv.get("id")
                         ):
-                        self.load_conversation(
+                        self.pick_conversation(
+                            popup,
                             cid
                         )
                     )
@@ -1657,6 +1678,18 @@ class ChatScreen(Screen):
         ).start()
 
         popup.open()
+
+    def pick_conversation(
+        self,
+        popup,
+        conversation_id
+    ):
+
+        popup.dismiss()
+
+        self.load_conversation(
+            conversation_id
+        )
 
     def load_conversation(
         self,
@@ -1706,36 +1739,35 @@ class ChatScreen(Screen):
         conversation_id
     ):
 
+        # Render each page as soon as
+        # it lands instead of waiting
+        # for the whole fetch.
+
+        def _render_page(items):
+
+            Clock.schedule_once(
+                lambda dt,
+                items=items:
+                self.process_conversation(
+                    items
+                )
+            )
+
         try:
 
-            events, cursor = (
+            _, cursor = (
                 self.api.search_events(
                     conversation_id,
                     limit=100,
                     page_start=None,
-                    max_pages=20
+                    max_pages=20,
+                    on_page=_render_page,
+                    timeout=NETWORK_TIMEOUT
                 )
             )
 
             if cursor is not None:
                 self.event_cursor = cursor
-
-            Clock.schedule_once(
-                lambda dt,
-                events=events:
-                self.process_conversation(
-                    events
-                )
-            )
-
-            Clock.schedule_once(
-                lambda dt:
-                setattr(
-                    self,
-                    "loading_history",
-                    False
-                )
-            )
 
         except Exception as error:
 
@@ -1744,14 +1776,14 @@ class ChatScreen(Screen):
                 error
             )
 
-            Clock.schedule_once(
-                lambda dt:
-                setattr(
-                    self,
-                    "loading_history",
-                    False
-                )
+        Clock.schedule_once(
+            lambda dt:
+            setattr(
+                self,
+                "loading_history",
+                False
             )
+        )
 
     # ========================================================
     # API
@@ -2174,7 +2206,7 @@ class ChatScreen(Screen):
         self.poll_event = (
             Clock.schedule_interval(
                 self.poll_conversation,
-                10
+                POLL_INTERVAL
             )
         )
 
@@ -2228,7 +2260,7 @@ class ChatScreen(Screen):
             self.poll_event = (
                 Clock.schedule_interval(
                     self.poll_conversation,
-                    10
+                    POLL_INTERVAL
                 )
             )
 
@@ -2336,7 +2368,8 @@ class ChatScreen(Screen):
                     self.conversation_id,
                     limit=100,
                     page_start=self.event_cursor,
-                    max_pages=20
+                    max_pages=20,
+                    timeout=NETWORK_TIMEOUT
                 )
             )
 
@@ -2422,11 +2455,29 @@ class ChatScreen(Screen):
 
             return
 
-        # ----------------------------------------------------
-        # PROCESS ONLY NEW EVENTS
-        # ----------------------------------------------------
+        self._process_events(
+            event_list,
+            0
+        )
 
-        for event in event_list:
+    def _process_events(
+        self,
+        event_list,
+        index
+    ):
+
+        # Walk slices of the event list
+        # and re-schedule so big batches
+        # don't freeze the UI thread.
+
+        end = min(
+            index + EVENT_CHUNK,
+            len(event_list)
+        )
+
+        for event in event_list[
+            index:end
+        ]:
 
             if not isinstance(
                 event,
@@ -2473,6 +2524,17 @@ class ChatScreen(Screen):
                 event
             )
 
+        if end < len(event_list):
+
+            Clock.schedule_once(
+                lambda dt:
+                self._process_events(
+                    event_list,
+                    end
+                ),
+                0
+            )
+
     # ========================================================
     # EVENT PARSER
     # ========================================================
@@ -2506,18 +2568,6 @@ class ChatScreen(Screen):
 
             value = event.get(
                 "value"
-            )
-
-            KNOWN_STATUSES = (
-                "idle",
-                "running",
-                "working",
-                "finished",
-                "error",
-                "cancelled",
-                "paused",
-                "ready",
-                "stuck"
             )
 
             if isinstance(value, dict):
@@ -2637,81 +2687,104 @@ class ChatScreen(Screen):
             if not delta:
                 return
 
-            in_code = (
-                "```" in delta
-            )
+            self.process_delta(delta)
 
-            if in_code:
+    # ========================================================
+    # STREAM HELPERS
+    # ========================================================
 
-                # Code block start:
-                # flush text, open code panel
-                self.flush_stream_text()
+    def process_delta(
+        self,
+        delta
+    ):
 
-                if (
-                    self.code_box
-                    is None
-                ):
+        # Code fences can split a delta
+        # anywhere, so walk the string and
+        # toggle state on every fence.
 
-                    self.open_code_panel()
+        remaining = delta
 
-                # Strip the backticks
-                # and language tag
-                cleaned = (
-                    delta.split(
-                        "```", 1
-                    )[-1]
-                )
+        while remaining:
 
-                if cleaned.strip():
+            fence = remaining.find("```")
+
+            if self.in_code:
+
+                if fence == -1:
 
                     self.code_buffer.append(
-                        cleaned
+                        remaining
                     )
 
-            elif self.code_box is not None:
+                    remaining = ""
 
-                # Inside a code block
-                self.code_buffer.append(
-                    delta
-                )
+                else:
 
-                if (
-                    "```"
-                    in self.code_buffer
-                ):
-
-                    # Code block end: close panel
-                    combined = "".join(
-                        self.code_buffer
+                    self.code_buffer.append(
+                        remaining[:fence]
                     )
 
-                    body, _, _ = (
-                        combined.partition(
-                            "```"
-                        )
-                    )
+                    self.close_code_panel()
 
-                    self.code_buffer = []
-
-                    self.close_code_panel(
-                        body
+                    remaining = (
+                        remaining[fence + 3:]
                     )
 
             else:
 
-                # Normal text: buffer
-                # until sentence end
-                self.stream_pending += delta
+                if fence == -1:
+
+                    self.stream_pending += (
+                        remaining
+                    )
+
+                    remaining = ""
+
+                else:
+
+                    before = remaining[:fence]
+
+                    if before:
+
+                        self.stream_pending += (
+                            before
+                        )
+
+                    self.flush_stream_text()
+
+                    self.open_code_panel()
+
+                    self.in_code = True
+
+                    rest = (
+                        remaining[fence + 3:]
+                    )
+
+                    # Drop the language tag
+                    # on the opening fence
+                    # (e.g. "```python\n").
+
+                    if "\n" in rest:
+
+                        tag, _, rest = (
+                            rest.partition("\n")
+                        )
+
+                    elif (
+                        rest.strip()
+                        and " "
+                        not in rest.strip()
+                    ):
+
+                        rest = ""
+
+                    remaining = rest
 
                 if self._sentence_end(
                     self.stream_pending
                 ):
 
                     self.flush_stream_text()
-
-    # ========================================================
-    # STREAM HELPERS
-    # ========================================================
 
     def _sentence_end(self, text):
 
@@ -2815,8 +2888,14 @@ class ChatScreen(Screen):
 
     def close_code_panel(
         self,
-        body
+        body=None
     ):
+
+        if body is None:
+
+            body = "".join(
+                self.code_buffer
+            )
 
         if self.code_label is not None:
 
@@ -2825,6 +2904,10 @@ class ChatScreen(Screen):
         self.code_box = None
 
         self.code_label = None
+
+        self.code_buffer = []
+
+        self.in_code = False
 
     # ========================================================
     # FINISHED CHECK
@@ -2863,13 +2946,7 @@ class ChatScreen(Screen):
 
         if self.code_box is not None:
 
-            self.close_code_panel(
-                "".join(
-                    self.code_buffer
-                )
-            )
-
-            self.code_buffer = []
+            self.close_code_panel()
 
         if (
             not self.reply_received
@@ -3241,11 +3318,23 @@ class ChatScreen(Screen):
             widget
         )
 
-        Clock.schedule_once(
-            lambda dt:
-            self.scroll_bottom(),
-            0.1
-        )
+        if not self._scroll_scheduled:
+
+            self._scroll_scheduled = True
+
+            Clock.schedule_once(
+                self._do_scroll,
+                0.1
+            )
+
+    def _do_scroll(
+        self,
+        dt
+    ):
+
+        self._scroll_scheduled = False
+
+        self.scroll_bottom()
 
     def scroll_bottom(
         self
