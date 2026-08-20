@@ -17,6 +17,7 @@ from kivy.uix.scrollview import ScrollView
 from kivy.uix.dropdown import DropDown
 from kivy.uix.popup import Popup
 from kivy.uix.togglebutton import ToggleButton
+from kivy.uix.slider import Slider
 
 from kivy.uix.screenmanager import (
     ScreenManager,
@@ -1401,23 +1402,81 @@ class ChatScreen(Screen):
 
         current = get_color(key)
 
+        preview = Label(
+            text="",
+            size_hint_y=None,
+            height=dp(40)
+        )
+
         content = BoxLayout(
             orientation="vertical",
             spacing=dp(6),
             padding=dp(12)
         )
 
-        label = Label(
-            text=f"Pick {key}:",
-            size_hint_y=None,
-            height=dp(28)
+        content.add_widget(
+            Label(
+                text=f"Pick {key}:",
+                size_hint_y=None,
+                height=dp(28)
+            )
         )
 
-        hex_input = TextInput(
-            text=self.rgba_to_hex(current),
-            multiline=False,
-            hint_text="#rrggbb"
+        content.add_widget(preview)
+
+        hex_label = Label(
+            text="",
+            size_hint_y=None,
+            height=dp(24)
         )
+
+        content.add_widget(hex_label)
+
+        sliders = []
+
+        for channel in ("R", "G", "B"):
+
+            slider = Slider(
+                min=0,
+                max=1,
+                value=current[
+                    "RGB".index(
+                        channel
+                    )
+                ],
+                step=0.01
+            )
+
+            slider.bind(
+                value=lambda s, v, c=channel:
+                self._update_preview(
+                    sliders,
+                    preview,
+                    hex_label,
+                    channel_index=(
+                        "RGB".index(
+                            c
+                        )
+                    )
+                )
+            )
+
+            sliders.append(slider)
+
+            row = BoxLayout(
+                spacing=dp(6)
+            )
+
+            row.add_widget(
+                Label(
+                    text=channel,
+                    size_hint_x=0.08
+                )
+            )
+
+            row.add_widget(slider)
+
+            content.add_widget(row)
 
         buttons = BoxLayout(
             size_hint_y=None,
@@ -1434,36 +1493,44 @@ class ChatScreen(Screen):
         popup = Popup(
             title=f"Color: {key}",
             content=content,
-            size_hint=(0.7, 0.4),
+            size_hint=(0.85, 0.65),
         )
 
         def save(_):
 
             rgba = (
-                self.hex_to_rgba(
-                    hex_input.text
+                sliders[0].value,
+                sliders[1].value,
+                sliders[2].value,
+                1
+            )
+
+            set_custom_color(
+                key, rgba
+            )
+
+            settings = load_settings()
+
+            save_custom_colors(
+                settings
+            )
+
+            save_settings(settings)
+
+            widget.background_color = (
+                rgba
+            )
+
+            self.add_message(
+                "SYSTEM",
+                (
+                    f"Color '{key}' updated."
+                    " Restart app to apply"
+                    " fully."
                 )
             )
 
-            if rgba:
-
-                set_custom_color(
-                    key, rgba
-                )
-
-                settings = load_settings()
-
-                save_custom_colors(
-                    settings
-                )
-
-                save_settings(settings)
-
-                widget.background_color = (
-                    rgba
-                )
-
-                popup.dismiss()
+            popup.dismiss()
 
         def reset(_):
 
@@ -1497,41 +1564,37 @@ class ChatScreen(Screen):
 
         buttons.add_widget(reset_btn)
 
-        content.add_widget(label)
-
-        content.add_widget(hex_input)
-
         content.add_widget(buttons)
 
         popup.open()
 
-    def hex_to_rgba(
+        self._update_preview(
+            sliders,
+            preview,
+            hex_label,
+            channel_index=0
+        )
+
+    def _update_preview(
         self,
-        text
+        sliders,
+        preview,
+        hex_label,
+        channel_index
     ):
 
-        text = text.strip().lstrip("#")
+        rgba = (
+            sliders[0].value,
+            sliders[1].value,
+            sliders[2].value,
+            1
+        )
 
-        if len(text) != 6:
-            return None
+        preview.background_color = rgba
 
-        try:
-
-            rgb = tuple(
-                int(text[i:i+2], 16) / 255
-                for i in (0, 2, 4)
-            )
-
-            return (
-                rgb[0],
-                rgb[1],
-                rgb[2],
-                1
-            )
-
-        except ValueError:
-
-            return None
+        hex_label.text = (
+            self.rgba_to_hex(rgba)
+        )
 
     def rgba_to_hex(
         self,
