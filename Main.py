@@ -5,6 +5,7 @@ import threading
 from kivy.app import App
 from kivy.clock import Clock
 from kivy.metrics import dp
+from kivy.core.clipboard import Clipboard
 
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.button import Button
@@ -21,26 +22,82 @@ from openhands_api import OpenHandsAPI
 
 
 # ============================================================
+# THEME
+# ============================================================
+
+BACKGROUND = (0.10, 0.11, 0.15, 1)
+SURFACE = (0.16, 0.18, 0.24, 1)
+ACCENT = (0.25, 0.55, 0.95, 1)
+TEXT = (0.92, 0.93, 0.96, 1)
+MUTED = (0.55, 0.58, 0.66, 1)
+YOU_COLOR = (0.18, 0.45, 0.85, 1)
+AI_COLOR = (0.22, 0.56, 0.32, 1)
+SYSTEM_COLOR = (0.35, 0.38, 0.46, 1)
+ERROR_COLOR = (0.75, 0.25, 0.25, 1)
+
+SPEAKER_COLORS = {
+    "You": YOU_COLOR,
+    "OpenHands": AI_COLOR,
+    "SYSTEM": SYSTEM_COLOR,
+    "GIT CHANGES": SYSTEM_COLOR,
+    "GIT DIFF": SYSTEM_COLOR,
+}
+
+
+def speaker_color(speaker):
+
+    if "ERROR" in speaker:
+        return ERROR_COLOR
+
+    return SPEAKER_COLORS.get(
+        speaker,
+        SURFACE
+    )
+
+
+# ============================================================
 # SETTINGS
 # ============================================================
 
-SETTINGS_FILE = os.path.join(
-    os.path.expanduser("~"),
-    ".openhands_client_settings.json"
-)
+_SETTINGS_FILE = None
+
+
+def settings_file():
+
+    global _SETTINGS_FILE
+
+    if _SETTINGS_FILE is not None:
+        return _SETTINGS_FILE
+
+    try:
+        root = App.get_running_app().user_data_dir
+    except Exception:
+        root = os.path.expanduser("~")
+
+    os.makedirs(
+        root,
+        exist_ok=True
+    )
+
+    _SETTINGS_FILE = os.path.join(
+        root,
+        "openhands_client_settings.json"
+    )
+
+    return _SETTINGS_FILE
 
 
 def load_settings():
 
-    if not os.path.exists(
-        SETTINGS_FILE
-    ):
+    path = settings_file()
+
+    if not os.path.exists(path):
         return {}
 
     try:
 
         with open(
-            SETTINGS_FILE,
+            path,
             "r",
             encoding="utf-8"
         ) as file:
@@ -64,7 +121,7 @@ def save_settings(
     try:
 
         with open(
-            SETTINGS_FILE,
+            settings_file(),
             "w",
             encoding="utf-8"
         ) as file:
@@ -81,6 +138,8 @@ def save_settings(
             "Could not save settings:",
             error
         )
+
+
 
 
 # ============================================================
@@ -100,24 +159,75 @@ class ChatMessage(Label):
             **kwargs
         )
 
-        self.text = (
-            f"{speaker}\n\n"
-            f"{message}"
+        self.full_text = (
+            f"{speaker}\n\n{message}"
         )
+
+        self.text = self.full_text
+
+        self.color = TEXT
 
         self.size_hint_y = None
 
         self.padding = (
-            dp(10),
-            dp(10)
+            dp(12),
+            dp(12)
         )
 
-        self.bind(
-            width=self.update_text_size
+        color = speaker_color(
+            speaker
         )
 
+        with self.canvas.before:
+
+            from kivy.graphics import (
+                Color,
+                RoundedRectangle
+            )
+
+            Color(*color)
+
+            self.bg = RoundedRectangle(
+                pos=self.pos,
+                size=self.size,
+                radius=[dp(8)]
+            )
+
         self.bind(
+            pos=self._update_bg,
+            size=self._update_bg,
+            width=self.update_text_size,
             texture_size=self.update_height
+        )
+
+    def _update_bg(
+        self,
+        *args
+    ):
+
+        self.bg.pos = self.pos
+
+        self.bg.size = self.size
+
+    def on_touch_down(
+        self,
+        touch
+    ):
+
+        if touch.is_double_tap:
+
+            if self.collide_point(
+                *touch.pos
+            ):
+
+                Clipboard.copy(
+                    self.full_text
+                )
+
+                return True
+
+        return super().on_touch_down(
+            touch
         )
 
     def update_text_size(
@@ -127,7 +237,7 @@ class ChatMessage(Label):
     ):
 
         self.text_size = (
-            width - dp(20),
+            width - dp(24),
             None
         )
 
@@ -139,7 +249,7 @@ class ChatMessage(Label):
 
         self.height = (
             texture_size[1]
-            + dp(20)
+            + dp(24)
         )
 
 
@@ -178,12 +288,14 @@ class SettingsScreen(Screen):
 
         title = Label(
             text="Settings",
-            font_size=24
+            font_size=24,
+            color=TEXT
         )
 
         back = Button(
             text="Back",
-            size_hint_x=0.2
+            size_hint_x=0.2,
+            background_color=ACCENT
         )
 
         back.bind(
@@ -209,6 +321,7 @@ class SettingsScreen(Screen):
         root.add_widget(
             Label(
                 text="OpenHands API Key",
+                color=TEXT,
                 size_hint_y=None,
                 height=dp(30)
             )
@@ -223,12 +336,14 @@ class SettingsScreen(Screen):
         self.api_key_input = TextInput(
             hint_text="Paste API key",
             password=True,
-            multiline=False
+            multiline=False,
+            background_color=(1, 1, 1, 1)
         )
 
         show_button = Button(
             text="Show",
-            size_hint_x=0.2
+            size_hint_x=0.2,
+            background_color=ACCENT
         )
 
         show_button.bind(
@@ -254,7 +369,8 @@ class SettingsScreen(Screen):
         save_button = Button(
             text="Save API Key",
             size_hint_y=None,
-            height=dp(50)
+            height=dp(50),
+            background_color=AI_COLOR
         )
 
         save_button.bind(
@@ -272,7 +388,8 @@ class SettingsScreen(Screen):
         self.test_button = Button(
             text="Test API Key",
             size_hint_y=None,
-            height=dp(50)
+            height=dp(50),
+            background_color=ACCENT
         )
 
         self.test_button.bind(
@@ -290,7 +407,8 @@ class SettingsScreen(Screen):
         delete_button = Button(
             text="Delete Saved Key",
             size_hint_y=None,
-            height=dp(50)
+            height=dp(50),
+            background_color=ERROR_COLOR
         )
 
         delete_button.bind(
@@ -308,6 +426,7 @@ class SettingsScreen(Screen):
         root.add_widget(
             Label(
                 text="Server URL",
+                color=TEXT,
                 size_hint_y=None,
                 height=dp(30)
             )
@@ -317,7 +436,8 @@ class SettingsScreen(Screen):
             text="https://app.all-hands.dev",
             multiline=False,
             size_hint_y=None,
-            height=dp(50)
+            height=dp(50),
+            background_color=(1, 1, 1, 1)
         )
 
         root.add_widget(
@@ -330,6 +450,7 @@ class SettingsScreen(Screen):
 
         self.status = Label(
             text="",
+            color=TEXT,
             size_hint_y=None,
             height=dp(100)
         )
@@ -592,6 +713,10 @@ class ChatScreen(Screen):
 
         self.last_status = None
 
+        self.finished = False
+
+        self.reply_received = False
+
         # ----------------------------------------------------
         # ROOT
         # ----------------------------------------------------
@@ -613,12 +738,14 @@ class ChatScreen(Screen):
 
         title = Label(
             text="OpenHands AI",
-            font_size=22
+            font_size=22,
+            color=TEXT
         )
 
         settings = Button(
             text="Settings",
-            size_hint_x=0.2
+            size_hint_x=0.2,
+            background_color=ACCENT
         )
 
         settings.bind(
@@ -654,7 +781,8 @@ class ChatScreen(Screen):
 
         self.start_button = Button(
             text="Start",
-            size_hint_x=0.18
+            size_hint_x=0.18,
+            background_color=ACCENT
         )
 
         self.start_button.bind(
@@ -683,11 +811,13 @@ class ChatScreen(Screen):
         )
 
         self.status_label = Label(
-            text="Status: NOT CONNECTED"
+            text="Status: NOT CONNECTED",
+            color=TEXT
         )
 
         self.credits_label = Label(
-            text="Credits: ?"
+            text="Credits: ?",
+            color=MUTED
         )
 
         status_row.add_widget(
@@ -747,7 +877,8 @@ class ChatScreen(Screen):
 
         self.send_button = Button(
             text="SEND",
-            size_hint_x=0.18
+            size_hint_x=0.18,
+            background_color=AI_COLOR
         )
 
         self.send_button.bind(
@@ -777,11 +908,13 @@ class ChatScreen(Screen):
         )
 
         changes = Button(
-            text="Git Changes"
+            text="Git Changes",
+            background_color=ACCENT
         )
 
         diff = Button(
-            text="Git Diff"
+            text="Git Diff",
+            background_color=ACCENT
         )
 
         changes.bind(
@@ -1203,6 +1336,10 @@ class ChatScreen(Screen):
 
         self.seen_event_ids.clear()
 
+        self.finished = False
+
+        self.reply_received = False
+
         self.start_button.disabled = False
 
         self.send_button.disabled = False
@@ -1223,7 +1360,7 @@ class ChatScreen(Screen):
         self.poll_event = (
             Clock.schedule_interval(
                 self.poll_conversation,
-                3
+                10
             )
         )
 
@@ -1353,13 +1490,10 @@ class ChatScreen(Screen):
         self
     ):
 
-        try:
+        if self.finished:
+            return
 
-            conversation = (
-                self.api.get_conversation(
-                    self.conversation_id
-                )
-            )
+        try:
 
             events = (
                 self.api.search_events(
@@ -1370,10 +1504,8 @@ class ChatScreen(Screen):
 
             Clock.schedule_once(
                 lambda dt,
-                conversation=conversation,
                 events=events:
                 self.process_conversation(
-                    conversation,
                     events
                 )
             )
@@ -1381,6 +1513,9 @@ class ChatScreen(Screen):
         except Exception as error:
 
             error_text = str(error)
+
+            if "429" in error_text:
+                return
 
             Clock.schedule_once(
                 lambda dt,
@@ -1396,68 +1531,8 @@ class ChatScreen(Screen):
 
     def process_conversation(
         self,
-        conversation,
         events
     ):
-
-        # ----------------------------------------------------
-        # STATUS
-        # ----------------------------------------------------
-
-        conv = None
-
-        if isinstance(
-            conversation,
-            list
-        ):
-
-            if conversation:
-                conv = conversation[0]
-
-        elif isinstance(
-            conversation,
-            dict
-        ):
-
-            items = (
-                conversation.get(
-                    "items"
-                )
-                or conversation.get(
-                    "data"
-                )
-            )
-
-            if (
-                isinstance(items, list)
-                and items
-            ):
-
-                conv = items[0]
-
-            else:
-
-                conv = conversation
-
-        if conv:
-
-            status = (
-                conv.get(
-                    "execution_status"
-                )
-                or conv.get(
-                    "status"
-                )
-                or conv.get(
-                    "sandbox_status"
-                )
-            )
-
-            if status:
-
-                self.set_status(
-                    str(status)
-                )
 
         # ----------------------------------------------------
         # GET EVENT LIST
@@ -1556,16 +1631,33 @@ class ChatScreen(Screen):
             )
         )
 
-        print(
-            "\n--- NEW EVENT ---"
-        )
+        # ----------------------------------------------------
+        # STATE UPDATE
+        # ----------------------------------------------------
 
-        print(
-            json.dumps(
-                event,
-                indent=2
-            )[:10000]
-        )
+        if kind == (
+            "ConversationStateUpdateEvent"
+        ):
+
+            value = event.get(
+                "value"
+            ) or {}
+
+            status = value.get(
+                "execution_status"
+            )
+
+            if status:
+
+                self.set_status(
+                    str(status)
+                )
+
+                self.check_finished(
+                    status
+                )
+
+            return
 
         # ----------------------------------------------------
         # ERROR EVENT
@@ -1610,10 +1702,53 @@ class ChatScreen(Screen):
 
             if text:
 
+                self.reply_received = True
+
+                self.send_button.disabled = False
+
                 self.add_message(
                     "OpenHands",
                     text
                 )
+
+    # ========================================================
+    # FINISHED CHECK
+    # ========================================================
+
+    def check_finished(
+        self,
+        status
+    ):
+
+        status_lower = str(
+            status
+        ).lower()
+
+        if status_lower not in (
+            "finished",
+            "error",
+            "cancelled"
+        ):
+            return
+
+        self.finished = True
+
+        if self.poll_event is not None:
+
+            self.poll_event.cancel()
+
+            self.poll_event = None
+
+        self.send_button.disabled = False
+
+        if not self.reply_received:
+
+            self.add_message(
+                "SYSTEM",
+                "OpenHands finished without a reply."
+            )
+
+        self.reply_received = False
 
     # ========================================================
     # TEXT EXTRACTION
@@ -2018,6 +2153,11 @@ class OpenHandsClient(
     def build(
         self
     ):
+
+        from kivy.core.window import Window
+
+        if Window is not None:
+            Window.clearcolor = BACKGROUND
 
         self.screen_manager = (
             ScreenManager()
