@@ -249,13 +249,30 @@ class OpenHandsAPI:
                 else None
             )
 
+            if page_id:
+
+                try:
+                    page_id = int(page_id)
+                except (TypeError, ValueError):
+
+                    page_id = None
+
             if not page_id:
                 break
 
         cursor = None
 
         if all_items:
-            cursor = last_offset + last_count
+
+            try:
+                cursor = (
+                    int(last_offset or 0)
+                    + int(last_count)
+                )
+
+            except (TypeError, ValueError):
+
+                cursor = None
 
         return all_items, cursor
 
