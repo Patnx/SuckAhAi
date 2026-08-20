@@ -1648,17 +1648,22 @@ class ChatScreen(Screen):
                     event_id
                 )
 
-            self.process_event(
-                event
-            )
-
             if self.debug_enabled:
 
                 print(
-                    "[EVENT]", kind, "| source:",
-                    event.get("source"), "|",
-                    self.extract_text(event)[:80]
+                    "[EVENT]",
+                    event.get("kind"),
+                    "| source:",
+                    event.get("source"),
+                    "|",
+                    self.extract_text(
+                        event
+                    )[:80]
                 )
+
+            self.process_event(
+                event
+            )
 
     # ========================================================
     # EVENT PARSER
