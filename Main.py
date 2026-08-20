@@ -1,5 +1,6 @@
 import os
 import json
+import time
 import threading
 
 import requests
@@ -49,17 +50,18 @@ CUSTOM_COLORS = {}
 # Poll this often so streamed
 # deltas feel live; each poll is
 # a single lightweight request.
-POLL_INTERVAL = 4
+POLL_INTERVAL = 1.5
 
 # Events are rendered in slices
 # so history loads don't freeze
 # the UI on large batches.
 EVENT_CHUNK = 20
 
-# Bound poll/history requests;
-# a hung connection would pin the
-# worker flag for the default 90s.
-NETWORK_TIMEOUT = 20
+# Bound poll requests; a hung one
+# would stall live updates for the
+# whole window. Keep it near the
+# poll interval so stalls stay short.
+NETWORK_TIMEOUT = 5
 
 KNOWN_STATUSES = frozenset((
     "idle",
@@ -812,6 +814,14 @@ class ChatScreen(Screen):
         self.repo_dropdown = None
 
         self.repos_cache = []
+
+        self.history_cache = None
+
+        self.history_cache_at = 0
+
+        self.history_popup = None
+
+        self.history_refresh = None
 
         self.loading_history = False
 
@@ -1594,14 +1604,75 @@ class ChatScreen(Screen):
             size_hint=(0.9, 0.9)
         )
 
+        self.history_popup = popup
+
+        popup.bind(
+            on_dismiss=self._stop_history_refresh
+        )
+
+        # Serve the cache instantly on
+        # reopen, refresh in the background.
+
+        if self.history_cache is not None:
+
+            self._render_history(
+                popup,
+                loading,
+                rows,
+                self.history_cache
+            )
+
+        self._fetch_history(
+            popup,
+            loading,
+            rows,
+            force=(
+                self.history_cache is None
+            )
+        )
+
+        self.history_refresh = (
+            Clock.schedule_interval(
+                lambda dt:
+                self._fetch_history(
+                    popup,
+                    loading,
+                    rows
+                ),
+                30
+            )
+        )
+
+        popup.open()
+
+    def _fetch_history(
+        self,
+        popup,
+        loading,
+        rows,
+        force=False
+    ):
+
+        if not self.api:
+            return
+
+        fresh = (
+            self.history_cache is not None
+            and (
+                time.time()
+                - self.history_cache_at
+            ) < 30
+        )
+
+        if fresh and not force:
+            return
+
         def _worker():
 
             try:
 
                 conversations = (
-                    self.api.list_conversations(
-                        limit=50
-                    )
+                    self.api.list_conversations()
                 )
 
             except Exception as error:
@@ -1611,73 +1682,105 @@ class ChatScreen(Screen):
                     error
                 )
 
-                conversations = []
+                return
 
-            def _populate(dt):
+            self.history_cache = (
+                conversations
+            )
 
-                if not conversations:
+            self.history_cache_at = (
+                time.time()
+            )
 
-                    loading.text = (
-                        "No conversations found."
-                    )
-
-                for conv in sorted(
-                    conversations,
-                    key=lambda c: c.get(
-                        "updated_at", ""
-                    ),
-                    reverse=True
-                ):
-
-                    title = (
-                        conv.get(
-                            "title"
-                        )
-                        or conv.get(
-                            "id",
-                            "(untitled)"
-                        )
-                    )
-
-                    label = (
-                        title
-                        + "\n"
-                        + conv.get(
-                            "id",
-                            ""
-                        )
-                    )
-
-                    btn = Button(
-                        text=label,
-                        size_hint_y=None,
-                        height=dp(56)
-                    )
-
-                    btn.bind(
-                        on_release=lambda b, cid=(
-                            conv.get("id")
-                        ):
-                        self.pick_conversation(
-                            popup,
-                            cid
-                        )
-                    )
-
-                    rows.add_widget(btn)
-
-                loading.text = (
-                    "Tap a conversation to load it."
+            Clock.schedule_once(
+                lambda dt:
+                self._render_history(
+                    popup,
+                    loading,
+                    rows,
+                    conversations
                 )
-
-            Clock.schedule_once(_populate)
+            )
 
         threading.Thread(
             target=_worker,
             daemon=True
         ).start()
 
-        popup.open()
+    def _render_history(
+        self,
+        popup,
+        loading,
+        rows,
+        conversations
+    ):
+
+        rows.clear_widgets()
+
+        if not conversations:
+
+            loading.text = (
+                "No conversations found."
+            )
+
+            return
+
+        for conv in sorted(
+            conversations,
+            key=lambda c: c.get(
+                "updated_at", ""
+            ),
+            reverse=True
+        ):
+
+            title = (
+                conv.get("title")
+                or conv.get(
+                    "id",
+                    "(untitled)"
+                )
+            )
+
+            label = (
+                title
+                + "\n"
+                + conv.get("id", "")
+            )
+
+            btn = Button(
+                text=label,
+                size_hint_y=None,
+                height=dp(56)
+            )
+
+            btn.bind(
+                on_release=lambda b, cid=(
+                    conv.get("id")
+                ):
+                self.pick_conversation(
+                    popup,
+                    cid
+                )
+            )
+
+            rows.add_widget(btn)
+
+        loading.text = (
+            "Tap a conversation to load it."
+        )
+
+    def _stop_history_refresh(
+        self,
+        *args
+    ):
+
+        if self.history_refresh is not None:
+
+            self.history_refresh.cancel()
+
+            self.history_refresh = None
+
+        self.history_popup = None
 
     def pick_conversation(
         self,
@@ -2800,23 +2903,10 @@ class ChatScreen(Screen):
 
                     remaining = rest
 
-                if self._sentence_end(
-                    self.stream_pending
-                ):
-
-                    self.flush_stream_text()
-
-    def _sentence_end(self, text):
-
-        stripped = text.rstrip()
-
-        if not stripped:
-            return False
-
-        return stripped[-1] in (
-            ".", "!", "?",
-            "\n", ":"
-        )
+                # Render every delta as it
+                # lands instead of waiting
+                # for sentence ends.
+                self.flush_stream_text()
 
     def flush_stream_text(self):
 

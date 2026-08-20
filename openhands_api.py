@@ -385,7 +385,8 @@ class OpenHandsAPI:
 
     def list_conversations(
         self,
-        limit=50
+        limit=25,
+        timeout=20
     ):
 
         result = self._request(
@@ -393,7 +394,8 @@ class OpenHandsAPI:
             "/api/v1/app-conversations/search",
             params={
                 "limit": limit
-            }
+            },
+            timeout=timeout
         )
 
         if isinstance(result, dict):
