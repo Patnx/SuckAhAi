@@ -1364,7 +1364,7 @@ class ChatScreen(Screen):
             events = (
                 self.api.search_events(
                     self.conversation_id,
-                    limit=30
+                    limit=100
                 )
             )
 
@@ -1542,15 +1542,18 @@ class ChatScreen(Screen):
         event
     ):
 
-        event_type = str(
+        kind = str(
             event.get(
-                "type",
+                "kind",
                 ""
             )
         )
 
-        event_type_lower = (
-            event_type.lower()
+        source = str(
+            event.get(
+                "source",
+                ""
+            )
         )
 
         print(
@@ -1568,7 +1571,7 @@ class ChatScreen(Screen):
         # ERROR EVENT
         # ----------------------------------------------------
 
-        if "error" in event_type_lower:
+        if "error" in kind.lower():
 
             text = (
                 self.extract_text(
@@ -1594,34 +1597,23 @@ class ChatScreen(Screen):
         # MESSAGE EVENT
         # ----------------------------------------------------
 
-        text = (
-            self.extract_text(
-                event
-            )
-        )
-
-        if not text:
-            return
-
-        # Don't show every internal event as AI output.
-
-        message_types = (
-            "message",
-            "assistant",
-            "text",
-            "stream",
-            "llm"
-        )
-
-        if any(
-            x in event_type_lower
-            for x in message_types
+        if (
+            kind == "MessageEvent"
+            and source == "agent"
         ):
 
-            self.add_message(
-                "OpenHands",
-                text
+            text = (
+                self.extract_text(
+                    event.get("llm_message") or {}
+                )
             )
+
+            if text:
+
+                self.add_message(
+                    "OpenHands",
+                    text
+                )
 
     # ========================================================
     # TEXT EXTRACTION
