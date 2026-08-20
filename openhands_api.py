@@ -364,8 +364,10 @@ class OpenHandsAPI:
 
         result = self._request(
             "GET",
-            "/api/v1/app-conversations",
-            params={"limit": limit}
+            "/api/v1/app-conversations/search",
+            params={
+                "limit": limit
+            }
         )
 
         if isinstance(result, dict):
