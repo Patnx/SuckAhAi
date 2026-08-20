@@ -50,17 +50,18 @@ CUSTOM_COLORS = {}
 # Poll this often so streamed
 # deltas feel live; each poll is
 # a single lightweight request.
-POLL_INTERVAL = 4
+POLL_INTERVAL = 1.5
 
 # Events are rendered in slices
 # so history loads don't freeze
 # the UI on large batches.
 EVENT_CHUNK = 20
 
-# Bound poll/history requests;
-# a hung connection would pin the
-# worker flag for the default 90s.
-NETWORK_TIMEOUT = 20
+# Bound poll requests; a hung one
+# would stall live updates for the
+# whole window. Keep it near the
+# poll interval so stalls stay short.
+NETWORK_TIMEOUT = 5
 
 KNOWN_STATUSES = frozenset((
     "idle",
@@ -2902,23 +2903,10 @@ class ChatScreen(Screen):
 
                     remaining = rest
 
-                if self._sentence_end(
-                    self.stream_pending
-                ):
-
-                    self.flush_stream_text()
-
-    def _sentence_end(self, text):
-
-        stripped = text.rstrip()
-
-        if not stripped:
-            return False
-
-        return stripped[-1] in (
-            ".", "!", "?",
-            "\n", ":"
-        )
+                # Render every delta as it
+                # lands instead of waiting
+                # for sentence ends.
+                self.flush_stream_text()
 
     def flush_stream_text(self):
 
