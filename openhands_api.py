@@ -1,0 +1,355 @@
+import requests
+
+
+class OpenHandsAPI:
+
+    def __init__(
+        self,
+        api_key,
+        base_url="https://app.all-hands.dev"
+    ):
+        self.base_url = base_url.rstrip("/")
+        self.api_key = api_key
+
+        self.session = requests.Session()
+
+        self.session.headers.update({
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+        })
+
+    # =========================================================
+    # GENERIC REQUEST
+    # =========================================================
+
+    def _request(
+        self,
+        method,
+        path,
+        **kwargs
+    ):
+
+        url = f"{self.base_url}{path}"
+
+        try:
+
+            response = self.session.request(
+                method,
+                url,
+                timeout=90,
+                **kwargs
+            )
+
+        except requests.RequestException as error:
+
+            raise RuntimeError(
+                f"Network error:\n{error}"
+            )
+
+        if not response.ok:
+
+            try:
+                details = response.json()
+
+            except Exception:
+                details = response.text
+
+            print(
+                "\n"
+                "================ API ERROR ================\n"
+            )
+
+            print(
+                "METHOD:",
+                method
+            )
+
+            print(
+                "URL:",
+                url
+            )
+
+            print(
+                "STATUS:",
+                response.status_code
+            )
+
+            print(
+                "RESPONSE:",
+                details
+            )
+
+            print(
+                "============================================\n"
+            )
+
+            raise RuntimeError(
+                f"HTTP {response.status_code}\n\n"
+                f"URL:\n{url}\n\n"
+                f"Response:\n{details}"
+            )
+
+        if not response.content:
+            return {}
+
+        try:
+
+            return response.json()
+
+        except Exception:
+
+            return {
+                "raw": response.text
+            }
+
+    # =========================================================
+    # START CONVERSATION
+    # =========================================================
+
+    def start_conversation(
+        self,
+        repository,
+        message
+    ):
+
+        data = {
+            "initial_message": {
+                "content": [
+                    {
+                        "type": "text",
+                        "text": message
+                    }
+                ]
+            },
+            "selected_repository": repository
+        }
+
+        return self._request(
+            "POST",
+            "/api/v1/app-conversations",
+            json=data
+        )
+
+    # =========================================================
+    # START TASK
+    # =========================================================
+
+    def get_start_task(
+        self,
+        task_id
+    ):
+
+        return self._request(
+            "GET",
+            "/api/v1/app-conversations/start-tasks",
+            params={
+                "ids": task_id
+            }
+        )
+
+    # =========================================================
+    # CONVERSATION
+    # =========================================================
+
+    def get_conversation(
+        self,
+        conversation_id
+    ):
+
+        return self._request(
+            "GET",
+            "/api/v1/app-conversations",
+            params={
+                "ids": conversation_id
+            }
+        )
+
+    # =========================================================
+    # SEND MESSAGE
+    # =========================================================
+
+    def send_message(
+        self,
+        conversation_id,
+        message
+    ):
+
+        data = {
+            "message": {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "text",
+                        "text": message
+                    }
+                ]
+            }
+        }
+
+        return self._request(
+            "POST",
+            f"/api/v1/app-conversations/"
+            f"{conversation_id}/send-message",
+            json=data
+        )
+
+    # =========================================================
+    # SEARCH EVENTS
+    # =========================================================
+
+    def search_events(
+        self,
+        conversation_id,
+        limit=30
+    ):
+
+        return self._request(
+            "GET",
+            f"/api/v1/conversation/"
+            f"{conversation_id}/events/search",
+            params={
+                "limit": limit
+            }
+        )
+
+    # =========================================================
+    # EVENT COUNT
+    # =========================================================
+
+    def count_events(
+        self,
+        conversation_id
+    ):
+
+        return self._request(
+            "GET",
+            f"/api/v1/conversation/"
+            f"{conversation_id}/events/count"
+        )
+
+    # =========================================================
+    # EVENT BATCH
+    # =========================================================
+
+    def get_events(
+        self,
+        conversation_id,
+        event_ids
+    ):
+
+        data = {
+            "event_ids": event_ids
+        }
+
+        return self._request(
+            "GET",
+            f"/api/v1/conversation/"
+            f"{conversation_id}/events",
+            json=data
+        )
+
+    # =========================================================
+    # GIT CHANGES
+    # =========================================================
+
+    def get_git_changes(
+        self,
+        conversation_id
+    ):
+
+        return self._request(
+            "GET",
+            f"/api/v1/app-conversations/"
+            f"{conversation_id}/git/changes"
+        )
+
+    # =========================================================
+    # GIT DIFF
+    # =========================================================
+
+    def get_git_diff(
+        self,
+        conversation_id
+    ):
+
+        return self._request(
+            "GET",
+            f"/api/v1/app-conversations/"
+            f"{conversation_id}/git/diff"
+        )
+
+    # =========================================================
+    # CREDITS
+    # =========================================================
+
+    def get_credits(self):
+
+        return self._request(
+            "GET",
+            "/api/billing/credits"
+        )
+
+    # =========================================================
+    # SUBSCRIPTION
+    # =========================================================
+
+    def get_subscription(self):
+
+        return self._request(
+            "GET",
+            "/api/billing/subscription-access"
+        )
+
+    # =========================================================
+    # MODELS
+    # =========================================================
+
+    def search_models(self):
+
+        return self._request(
+            "GET",
+            "/api/v1/config/models/search"
+        )
+
+    # =========================================================
+    # PROVIDERS
+    # =========================================================
+
+    def search_providers(self):
+
+        return self._request(
+            "GET",
+            "/api/v1/config/providers/search"
+        )
+
+    # =========================================================
+    # REPOSITORIES
+    # =========================================================
+
+    def search_repositories(
+        self,
+        search=""
+    ):
+
+        params = {}
+
+        if search:
+            params["search"] = search
+
+        return self._request(
+            "GET",
+            "/api/v1/git/repositories/search",
+            params=params
+        )
+
+    # =========================================================
+    # USER
+    # =========================================================
+
+    def get_user(self):
+
+        return self._request(
+            "GET",
+            "/api/v1/users/me"
+        )
