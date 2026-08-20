@@ -199,17 +199,54 @@ class OpenHandsAPI:
     def search_events(
         self,
         conversation_id,
-        limit=30
+        limit=100,
+        max_pages=3
     ):
 
-        return self._request(
-            "GET",
-            f"/api/v1/conversation/"
-            f"{conversation_id}/events/search",
-            params={
+        all_items = []
+        next_page_id = None
+
+        for _ in range(max_pages):
+
+            params = {
                 "limit": limit
             }
-        )
+
+            if next_page_id:
+                params["next_page_id"] = next_page_id
+
+            result = self._request(
+                "GET",
+                f"/api/v1/conversation/"
+                f"{conversation_id}/events/search",
+                params=params
+            )
+
+            items = []
+
+            if isinstance(result, dict):
+                items = result.get("items", [])
+            elif isinstance(result, list):
+                items = result
+
+            if not items:
+                break
+
+            all_items.extend(items)
+
+            if len(items) < limit:
+                break
+
+            next_page_id = (
+                result.get("next_page_id")
+                if isinstance(result, dict)
+                else None
+            )
+
+            if not next_page_id:
+                break
+
+        return all_items
 
     # =========================================================
     # EVENT COUNT
