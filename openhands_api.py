@@ -1,3 +1,5 @@
+import re
+
 import requests
 
 
@@ -185,11 +187,63 @@ class OpenHandsAPI:
             ]
         }
 
+        try:
+
+            return self._request(
+                "POST",
+                f"/api/v1/app-conversations/"
+                f"{conversation_id}/send-message",
+                json=data
+            )
+
+        except RuntimeError as error:
+
+            sandbox_id = (
+                self._paused_sandbox_id(
+                    str(error)
+                )
+            )
+
+            if not sandbox_id:
+                raise
+
+            self.resume_sandbox(sandbox_id)
+
+            return self._request(
+                "POST",
+                f"/api/v1/app-conversations/"
+                f"{conversation_id}/send-message",
+                json=data
+            )
+
+    def _paused_sandbox_id(
+        self,
+        error_text
+    ):
+
+        if "PAUSED" not in error_text:
+            return None
+
+        match = re.search(
+            r"/api/v1/sandboxes/"
+            r"([A-Za-z0-9]+)/resume",
+            error_text
+        )
+
+        if match:
+            return match.group(1)
+
+        return None
+
+    def resume_sandbox(
+        self,
+        sandbox_id
+    ):
+
         return self._request(
             "POST",
-            f"/api/v1/app-conversations/"
-            f"{conversation_id}/send-message",
-            json=data
+            f"/api/v1/sandboxes/"
+            f"{sandbox_id}/resume"
         )
 
     # =========================================================
