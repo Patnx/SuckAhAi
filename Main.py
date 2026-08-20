@@ -2265,6 +2265,46 @@ class ChatScreen(Screen):
 
         self.send_button.disabled = False
 
+        if (
+            not self.reply_received
+            and self.stream_buffer
+        ):
+
+            # Some agents only stream deltas
+            # and never send a final
+            # MessageEvent. Use the streamed
+            # text as the reply.
+            self.reply_received = True
+
+            if self.stream_label is None:
+
+                self.stream_label = (
+                    ChatMessage(
+                        "OpenHands",
+                        ""
+                    )
+                )
+
+                self.chat.add_widget(
+                    self.stream_label
+                )
+
+            self.stream_label.full_text = (
+                "OpenHands\n\n"
+                + "".join(
+                    self.stream_buffer
+                )
+            )
+
+            self.stream_label.text = (
+                self.stream_label
+                .full_text
+            )
+
+        self.stream_buffer = []
+
+        self.stream_label = None
+
         if not self.reply_received:
 
             self.add_message(
