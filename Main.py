@@ -3088,7 +3088,9 @@ class OpenHandsClient(
         from kivy.core.window import Window
 
         if Window is not None:
-            Window.clearcolor = BACKGROUND
+            Window.clearcolor = get_color(
+                "background"
+            )
 
         self.screen_manager = (
             ScreenManager()
