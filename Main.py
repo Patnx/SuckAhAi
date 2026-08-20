@@ -717,6 +717,10 @@ class ChatScreen(Screen):
 
         self.reply_received = False
 
+        self.debug_enabled = (
+            os.getenv("DEBUG") == "1"
+        )
+
         self._poll_active = False
 
         self.event_cursor = None
@@ -1630,6 +1634,14 @@ class ChatScreen(Screen):
             self.process_event(
                 event
             )
+
+            if self.debug_enabled:
+
+                print(
+                    "[EVENT]", kind, "| source:",
+                    event.get("source"), "|",
+                    self.extract_text(event)[:80]
+                )
 
     # ========================================================
     # EVENT PARSER
