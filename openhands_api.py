@@ -354,6 +354,35 @@ class OpenHandsAPI:
         )
 
     # =========================================================
+    # CONVERSATION LIST
+    # =========================================================
+
+    def list_conversations(
+        self,
+        limit=50
+    ):
+
+        result = self._request(
+            "GET",
+            "/api/v1/app-conversations",
+            params={"limit": limit}
+        )
+
+        if isinstance(result, dict):
+
+            items = result.get(
+                "items", result.get(
+                    "conversations", []
+                )
+            )
+
+        else:
+
+            items = result
+
+        return items or []
+
+    # =========================================================
     # SUBSCRIPTION
     # =========================================================
 
