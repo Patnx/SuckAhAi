@@ -856,7 +856,13 @@ class ChatScreen(Screen):
 
         self.repo_input = TextInput(
             hint_text="GitHub repository: user/repo or tap to pick",
-            multiline=False
+            multiline=False,
+            background_color=get_color(
+                "surface"
+            ),
+            foreground_color=get_color(
+                "text"
+            )
         )
 
         self.repo_input.bind(
@@ -960,7 +966,13 @@ class ChatScreen(Screen):
 
         self.message_input = TextInput(
             hint_text="Type a message...",
-            multiline=True
+            multiline=True,
+            background_color=get_color(
+                "surface"
+            ),
+            foreground_color=get_color(
+                "text"
+            )
         )
 
         self.send_button = Button(
@@ -3374,6 +3386,13 @@ class OpenHandsClient(
     def build(
         self
     ):
+
+        # Load custom colors BEFORE any
+        # widget is created so the
+        # background uses them.
+        load_custom_colors(
+            load_settings()
+        )
 
         from kivy.core.window import Window
 
