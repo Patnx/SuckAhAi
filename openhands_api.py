@@ -29,6 +29,7 @@ class OpenHandsAPI:
         self,
         method,
         path,
+        timeout=90,
         **kwargs
     ):
 
@@ -39,7 +40,7 @@ class OpenHandsAPI:
             response = self.session.request(
                 method,
                 url,
-                timeout=90,
+                timeout=timeout,
                 **kwargs
             )
 
@@ -255,13 +256,14 @@ class OpenHandsAPI:
         conversation_id,
         limit=100,
         page_start=None,
-        max_pages=20
+        max_pages=20,
+        on_page=None,
+        timeout=90
     ):
 
         all_items = []
         page_id = page_start
-        last_offset = page_start or 0
-        last_count = 0
+        last_next_id = None
 
         for _ in range(max_pages):
 
@@ -276,95 +278,65 @@ class OpenHandsAPI:
                 "GET",
                 f"/api/v1/conversation/"
                 f"{conversation_id}/events/search",
-                params=params
+                params=params,
+                timeout=timeout
             )
-
-            items = []
 
             if isinstance(result, dict):
                 items = result.get("items", [])
             elif isinstance(result, list):
                 items = result
+            else:
+                items = []
 
             if not items:
                 break
 
             all_items.extend(items)
 
-            last_offset = page_id or 0
-            last_count = len(items)
+            if on_page:
+                on_page(items)
 
-            if len(items) < limit:
-                break
-
-            page_id = (
+            next_id = (
                 result.get("next_page_id")
                 if isinstance(result, dict)
                 else None
             )
 
-            if page_id:
+            if next_id:
+                last_next_id = next_id
 
-                try:
-                    page_id = int(page_id)
-                except (TypeError, ValueError):
+            if len(items) < limit:
+                break
 
-                    page_id = None
+            page_id = next_id
 
             if not page_id:
                 break
 
+        # Resume token for the next poll:
+        # prefer the opaque page id, fall
+        # back to numeric offset math.
+
         cursor = None
 
-        if all_items:
+        if last_next_id:
+
+            cursor = last_next_id
+
+        elif all_items:
 
             try:
                 cursor = (
-                    int(last_offset or 0)
-                    + int(last_count)
+                    int(page_start or 0)
+                    + len(all_items)
                 )
-
             except (TypeError, ValueError):
-
                 cursor = None
 
         return all_items, cursor
 
-    # =========================================================
-    # EVENT COUNT
-    # =========================================================
 
-    def count_events(
-        self,
-        conversation_id
-    ):
-
-        return self._request(
-            "GET",
-            f"/api/v1/conversation/"
-            f"{conversation_id}/events/count"
-        )
-
-    # =========================================================
-    # EVENT BATCH
-    # =========================================================
-
-    def get_events(
-        self,
-        conversation_id,
-        event_ids
-    ):
-
-        data = {
-            "event_ids": event_ids
-        }
-
-        return self._request(
-            "GET",
-            f"/api/v1/conversation/"
-            f"{conversation_id}/events",
-            json=data
-        )
 
     # =========================================================
     # GIT CHANGES
@@ -438,66 +410,7 @@ class OpenHandsAPI:
 
         return items or []
 
-    # =========================================================
-    # SUBSCRIPTION
-    # =========================================================
 
-    def get_subscription(self):
 
-        return self._request(
-            "GET",
-            "/api/billing/subscription-access"
-        )
 
-    # =========================================================
-    # MODELS
-    # =========================================================
 
-    def search_models(self):
-
-        return self._request(
-            "GET",
-            "/api/v1/config/models/search"
-        )
-
-    # =========================================================
-    # PROVIDERS
-    # =========================================================
-
-    def search_providers(self):
-
-        return self._request(
-            "GET",
-            "/api/v1/config/providers/search"
-        )
-
-    # =========================================================
-    # REPOSITORIES
-    # =========================================================
-
-    def search_repositories(
-        self,
-        search=""
-    ):
-
-        params = {}
-
-        if search:
-            params["search"] = search
-
-        return self._request(
-            "GET",
-            "/api/v1/git/repositories/search",
-            params=params
-        )
-
-    # =========================================================
-    # USER
-    # =========================================================
-
-    def get_user(self):
-
-        return self._request(
-            "GET",
-            "/api/v1/users/me"
-        )
