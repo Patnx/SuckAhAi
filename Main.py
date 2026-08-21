@@ -1842,10 +1842,15 @@ class ChatScreen(Screen):
         conversation_id
     ):
 
-        # Small pages, one retry each:
-        # a 100-event page times out on
-        # slow connections, so fetch 25
-        # at a time and render as we go.
+        # Only the most recent pages —
+        # a full 2000-event walk timed
+        # out on slow connections. Fetch
+        # newest-first, render oldest of
+        # what we got so order is right.
+
+        MAX_PAGES = 3
+
+        PAGE_SIZE = 25
 
         def _render_page(items):
 
@@ -1860,11 +1865,17 @@ class ChatScreen(Screen):
         def _fetch_page(page_id):
 
             params = {
-                "limit": 25
+                "limit": PAGE_SIZE,
+                "sort_order": (
+                    "TIMESTAMP_DESC"
+                )
             }
 
             if page_id:
                 params["page_id"] = page_id
+
+            # Retry the first attempt —
+            # self-heals single timeouts.
 
             for attempt in range(2):
 
@@ -1876,7 +1887,7 @@ class ChatScreen(Screen):
                         + conversation_id
                         + "/events/search",
                         params=params,
-                        timeout=30
+                        timeout=45
                     )
 
                 except RuntimeError as error:
@@ -1893,9 +1904,11 @@ class ChatScreen(Screen):
 
         last_next_id = None
 
+        pages = []
+
         try:
 
-            for _ in range(80):
+            for _ in range(MAX_PAGES):
 
                 result = _fetch_page(page_id)
 
@@ -1928,18 +1941,26 @@ class ChatScreen(Screen):
                 if not items:
                     break
 
-                _render_page(items)
+                pages.append(items)
 
                 if next_id:
                     last_next_id = next_id
 
-                if len(items) < 25:
+                if len(items) < PAGE_SIZE:
                     break
 
                 page_id = next_id
 
                 if not page_id:
                     break
+
+            # Render oldest-first so the
+            # chat order stays correct —
+            # pages arrived newest-first.
+
+            for items in reversed(pages):
+
+                _render_page(items)
 
             if last_next_id:
 
