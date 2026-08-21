@@ -1848,12 +1848,18 @@ class ChatScreen(Screen):
         # newest-first, render oldest of
         # what we got so order is right.
 
+        # Track the oldest page we've
+        # fetched so "Load older" can
+        # continue backwards from it.
+
+        self._history_oldest_page = None
+
         MAX_PAGES = 5
 
-        # Events carry big payloads
-        # (file contents, cmd output) —
-        # 25/page still timed out, so
-        # fetch 10 at a time.
+        # One event can be ~44 KB (rich
+        # replies w/ tool output), so a
+        # page can be 440 KB. Give it a
+        # long budget, not a short one.
         PAGE_SIZE = 10
 
         def _render_page(items):
@@ -1891,7 +1897,7 @@ class ChatScreen(Screen):
                         + conversation_id
                         + "/events/search",
                         params=params,
-                        timeout=45
+                        timeout=90
                     )
 
                 except RuntimeError as error:
@@ -1972,6 +1978,17 @@ class ChatScreen(Screen):
                     last_next_id
                 )
 
+                # More pages exist — offer
+                # a button to load older
+                # messages on demand.
+
+                Clock.schedule_once(
+                    lambda dt:
+                    self._add_load_older(
+                        conversation_id
+                    )
+                )
+
         except Exception as error:
 
             print(
@@ -1999,6 +2016,201 @@ class ChatScreen(Screen):
                 False
             )
         )
+
+    def _add_load_older(
+        self,
+        conversation_id
+    ):
+
+        # Insert a button at the very
+        # top of the chat. Clicking it
+        # fetches the next page back
+        # in time and inserts it above.
+
+        btn = Button(
+            text=(
+                "Load older messages"
+            ),
+            size_hint_y=None,
+            height=40
+        )
+
+        btn.bind(
+            on_release=lambda *_:
+            self._load_older(
+                conversation_id,
+                btn
+            )
+        )
+
+        self.chat.add_widget(
+            btn,
+            index=len(
+                self.chat.children
+            )
+        )
+
+    def _load_older(
+        self,
+        conversation_id,
+        button
+    ):
+
+        button.disabled = True
+        button.text = "Loading..."
+
+        threading.Thread(
+            target=
+            self._load_older_worker,
+            args=(
+                conversation_id,
+                button
+            ),
+            daemon=True
+        ).start()
+
+    def _load_older_worker(
+        self,
+        conversation_id,
+        button
+    ):
+
+        try:
+
+            params = {
+                "limit": 10,
+                "sort_order": (
+                    "TIMESTAMP_DESC"
+                ),
+                "page_id":
+                    self.event_cursor
+            }
+
+            result = self.api._request(
+                "GET",
+                "/api/v1/conversation/"
+                + conversation_id
+                + "/events/search",
+                params=params,
+                timeout=90
+            )
+
+            items = (
+                result.get("items", [])
+                if isinstance(
+                    result, dict
+                )
+                else []
+            )
+
+            next_id = (
+                result.get(
+                    "next_page_id"
+                )
+                if isinstance(
+                    result, dict
+                )
+                else None
+            )
+
+            if items:
+
+                def _insert(dt):
+
+                    # Insert above the
+                    # button so older
+                    # msgs appear on top.
+
+                    for event in items:
+
+                        self._insert_event_top(
+                            event,
+                            button
+                        )
+
+                    self.event_cursor = (
+                        next_id
+                    )
+
+                    button.disabled = False
+                    button.text = (
+                        "Load older messages"
+                    )
+
+                    if not next_id:
+                        button.text = (
+                            "No more history"
+                        )
+                        button.disabled = True
+
+                Clock.schedule_once(
+                    _insert
+                )
+
+        except Exception as error:
+
+            err = str(error)
+
+            Clock.schedule_once(
+                lambda dt:
+                setattr(
+                    button,
+                    "text",
+                    "Error — tap to retry"
+                )
+            )
+
+            Clock.schedule_once(
+                lambda dt:
+                setattr(
+                    button,
+                    "disabled",
+                    False
+                )
+            )
+
+            print(
+                "Load older error:",
+                err
+            )
+
+    def _insert_event_top(
+        self,
+        event,
+        button
+    ):
+
+        # Minimal rendering for an older
+        # event inserted at the top —
+        # reuse the normal path but swap
+        # the widget order after adding.
+
+        before = set(
+            self.chat.children
+        )
+
+        # process_event is synchronous,
+        # unlike process_conversation
+        # which chunks via the clock.
+
+        self.process_event(event)
+
+        new_widgets = [
+            w for w in
+            self.chat.children
+            if w not in before
+        ]
+
+        for w in new_widgets:
+
+            self.chat.remove_widget(w)
+
+            self.chat.add_widget(
+                w,
+                index=len(
+                    self.chat.children
+                )
+            )
 
     # ========================================================
     # API
