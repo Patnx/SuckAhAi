@@ -1848,9 +1848,13 @@ class ChatScreen(Screen):
         # newest-first, render oldest of
         # what we got so order is right.
 
-        MAX_PAGES = 3
+        MAX_PAGES = 5
 
-        PAGE_SIZE = 25
+        # Events carry big payloads
+        # (file contents, cmd output) —
+        # 25/page still timed out, so
+        # fetch 10 at a time.
+        PAGE_SIZE = 10
 
         def _render_page(items):
 
